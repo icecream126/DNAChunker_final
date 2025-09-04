@@ -1,0 +1,20 @@
+# @package _global_
+defaults:
+  - _self_
+  - pipeline: nucleotide_transformer
+  - optimizer: adamw
+  - scheduler: cosine_warmup_timm
+  - override callbacks:
+    - model_checkpoint
+    - model_checkpoint_every_n_steps
+  - model: caduceus
+
+# Explicitly set the model and decoder for this experiment
+model:
+  _name_: dna_embedding_caduceus
+  config:
+    rcps: true
+
+decoder:
+  _name_: sequence
+  conjoin_train: true
