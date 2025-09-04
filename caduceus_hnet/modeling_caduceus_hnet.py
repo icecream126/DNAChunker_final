@@ -725,6 +725,20 @@ class CaduceusMixerModel(nn.Module):
             config.d_model, eps=config.norm_epsilon, **factory_kwargs
         )
     
+    def calculate_boundary_loss(self, p_original, boundaries):
+        boundary_logit = torch.stack([1-p_original, p_original], dim=-1).clamp(min=1e-7, max=1-1e-7)
+        boundary_target = boundaries.long()
+        mask = boundaries == 1
+
+        if mask.any():
+            boundary_logits_flat = boundary_logit.view(-1, 2)[mask.view(-1)]
+            boundary_target_flat = boundary_target.view(-1)[mask.view(-1)]
+            boundary_loss = F.cross_entropy(boundary_logits_flat, boundary_target_flat, reduction="mean")
+        else:
+            boundary_loss = 0.0
+        
+        return boundary_loss
+    
     def _pad_to_global_max(self, tensor: torch.Tensor, max_len: int, pad_value=0):
         """Pads the sequence dimension of a tensor to a global max length."""
         pad_len = max_len - tensor.shape[1]
@@ -757,10 +771,13 @@ class CaduceusMixerModel(nn.Module):
         # 2. Chunking
         p_original, b_original_dynamic = self.routing_module(x_hat)
         
-        boundary_mask_to_use = boundaries if boundaries is not None else b_original_dynamic
+        if boundaries is not None:
+            boundary_loss = self.calculate_boundary_loss(p_original, boundaries)
+        else:
+            boundary_loss = 0.0
 
-        x_s_unpadded, num_tokens = self.chunk_layer(x_hat, boundary_mask_to_use)
-        p_s_unpadded, _ = self.chunk_layer(p_original.unsqueeze(-1), boundary_mask_to_use)
+        x_s_unpadded, num_tokens = self.chunk_layer(x_hat, b_original_dynamic)
+        p_s_unpadded, _ = self.chunk_layer(p_original.unsqueeze(-1), b_original_dynamic)
         p_s_unpadded = p_s_unpadded.squeeze(-1)
         
         # DDP FIX for synchronizing lengths
@@ -788,7 +805,7 @@ class CaduceusMixerModel(nn.Module):
 
         # --- FIX: Call the single de-chunking and upsampling module ---
         # 4. Dechunking and Upsampling
-        z_dechunked = self.dechunk_and_upsample(z_hat_s, p_s, boundary_mask_to_use)
+        z_dechunked = self.dechunk_and_upsample(z_hat_s, p_s, b_original_dynamic)
         
         # 5. Decoder with Gated Residual Connection
         # The original probabilities 'p_original' act as a gate.
@@ -805,7 +822,7 @@ class CaduceusMixerModel(nn.Module):
         residual = decoder_residual
 
         # Ratio Loss
-        F = boundary_mask_to_use.float().mean(dim=1)
+        F = b_original_dynamic.float().mean(dim=1)
         G = p_original.mean(dim=1)
         N = 1.0 / self.target_ratio
         ratio_loss = (N / (N - 1)) * ((N - 1) * F * G + (1 - F) * (1 - G)) if N > 1 else torch.zeros_like(F)
@@ -827,7 +844,7 @@ class CaduceusMixerModel(nn.Module):
             )
         if output_hidden_states:
             all_hidden_states.append(hidden_states)
-        return hidden_states, all_hidden_states, ratio_loss
+        return hidden_states, all_hidden_states, ratio_loss + boundary_loss
 
 def cross_entropy(logits, y, ignore_index=-100):
     """Cross entropy loss."""

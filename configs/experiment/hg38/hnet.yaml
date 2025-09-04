@@ -17,7 +17,7 @@ trainer:
   accumulate_grad_batches: ${div_up:${train.global_batch_size}, ${eval:${trainer.devices} * ${dataset.batch_size} * ${trainer.num_nodes}}}
   max_epochs: null
   max_steps: 50000
-  precision: 16
+  precision: 32
   gradient_clip_val: 1.0
   limit_val_batches: 0.125
 

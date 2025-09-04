@@ -5,8 +5,8 @@ NUM_DEVICES=1
 # Run script
 SEQLEN=131072
 MAX_STEPS=50000
-D_MODEL=256
-N_LAYER=8
+D_MODEL=128
+N_LAYER=12
 LR="5e-6"
 TOKENIZER_TYPE="default"
 TARGET_RATIO="0.3"
@@ -24,6 +24,7 @@ python -m train \
   dataset.batch_size=2 \
   dataset.mlm=true \
   dataset.mlm_probability=0.15 \
+  dataset.motif_boundaries=true \
   model="hnet" \
   model.config.d_model=${D_MODEL} \
   model.config.n_layer=${N_LAYER} \
