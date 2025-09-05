@@ -34,7 +34,7 @@ python -m train \
   train.global_batch_size=2 \
   trainer.max_steps=${MAX_STEPS} \
   trainer.devices=${NUM_DEVICES} \
-  trainer.accumulate_grad_batches=8 \
+  trainer.accumulate_grad_batches=1 \
   +trainer.val_check_interval=$(( MAX_STEPS / 5 )) \
   wandb.group=pretrain_hg38 \
   wandb.name="${WANDB_NAME}" \

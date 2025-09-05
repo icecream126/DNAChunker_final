@@ -1,6 +1,6 @@
 export HYDRA_FULL_ERROR=1
 
-NUM_DEVICES=1
+NUM_DEVICES=4
 
 # Run script
 # SEQLEN=131072
@@ -18,8 +18,8 @@ TARGET_RATIO="0.3"
 TOKENIZER_TYPE="default"
 # CKPT_PATH="/workspace/caduceus/outputs/pretrain/hg38/caduceus-hnet_seqlen-k_d_model-256_n_enc_layer-2_n_main_layer-8_n_dec_layer-2_lr-8e-3_tokenizer_type-default/checkpoints/test/loss.ckpt"
 
-# BATCH_SIZE=$(( 524288 / SEQLEN ))
-BATCH_SIZE=2
+BATCH_SIZE=$(( 524288 / SEQLEN ))
+# BATCH_SIZE=2
 SEQLEN_DIS="$(echo "scale=0; ${SEQLEN} / 1000" | bc)k"
 WANDB_NAME="caduceus-hnet_seqlen-${SEQLEN_DIS}_d_model-${D_MODEL}_n_enc_layer-${N_ENC_LAYER}_n_main_layer-${N_MAIN_LAYER}_n_dec_layer-${N_DEC_LAYER}_lr-${LR}_tokenizer_type-${TOKENIZER_TYPE}-motif"
 HYDRA_RUN_DIR="./outputs/pretrain/hg38/${WANDB_NAME}"
@@ -54,7 +54,7 @@ python -m train \
   trainer.max_steps=${MAX_STEPS} \
   trainer.devices=${NUM_DEVICES} \
   +trainer.val_check_interval=$(( MAX_STEPS / 5 )) \
-  trainer.accumulate_grad_batches=8 \
+  trainer.accumulate_grad_batches=1 \
   wandb.group=pretrain_hg38 \
   wandb.name="${WANDB_NAME}" \
   hydra.run.dir="${HYDRA_RUN_DIR}"

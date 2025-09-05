@@ -745,6 +745,41 @@ class CaduceusMixerModel(nn.Module):
         if pad_len > 0:
             return F.pad(tensor, (0, 0, 0, pad_len), value=pad_value)
         return tensor
+
+    def get_mask_boundaries(self, input_ids):
+        mask_index = 3
+        mask = input_ids == mask_index
+
+        # retrieve boundaries, where the boundary should be set surrounding the mask index
+        boundaries = torch.zeros_like(input_ids)
+        
+        # Vectorized approach: find first and last mask positions for each batch
+        batch_size, seq_len = input_ids.shape
+        
+        # Find first mask position for each batch (or seq_len if no mask found)
+        first_mask_pos = torch.full((batch_size,), seq_len, dtype=torch.long, device=input_ids.device)
+        last_mask_pos = torch.full((batch_size,), -1, dtype=torch.long, device=input_ids.device)
+        
+        # Get indices where mask tokens exist
+        batch_indices, seq_indices = torch.where(mask)
+        
+        if len(batch_indices) > 0:
+            # Group by batch and find min/max positions
+            for batch_idx in range(batch_size):
+                batch_mask_positions = seq_indices[batch_indices == batch_idx]
+                if len(batch_mask_positions) > 0:
+                    first_mask_pos[batch_idx] = batch_mask_positions.min()
+                    last_mask_pos[batch_idx] = batch_mask_positions.max()
+        
+        # Set boundaries at start of mask regions
+        valid_start_mask = first_mask_pos < seq_len
+        boundaries[valid_start_mask, first_mask_pos[valid_start_mask]] = 1
+        
+        # Set boundaries after end of mask regions (if not at sequence end)
+        valid_end_mask = (last_mask_pos >= 0) & (last_mask_pos < seq_len - 1)
+        boundaries[valid_end_mask, last_mask_pos[valid_end_mask] + 1] = 1
+        import pdb; pdb.set_trace()
+        return boundaries
         
     def forward(self, input_ids, inputs_embeds=None, output_hidden_states=False, boundaries=None):
         all_hidden_states = []
@@ -775,6 +810,8 @@ class CaduceusMixerModel(nn.Module):
             boundary_loss = self.calculate_boundary_loss(p_original, boundaries)
         else:
             boundary_loss = 0.0
+        
+        mask_boundaries = self.get_mask_boundaries(input_ids)
 
         x_s_unpadded, num_tokens = self.chunk_layer(x_hat, b_original_dynamic)
         p_s_unpadded, _ = self.chunk_layer(p_original.unsqueeze(-1), b_original_dynamic)
