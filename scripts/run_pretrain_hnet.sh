@@ -43,7 +43,7 @@ python -m train \
   trainer.accumulate_grad_batches=1 \
   trainer.gradient_clip_val=1 \
   +trainer.strategy=ddp \
-  +trainer.val_check_interval=1 \
+  +trainer.val_check_interval=5000 \
   wandb.group=pretrain_hg38 \
   wandb.name="${WANDB_NAME}" \
   hydra.run.dir="${HYDRA_RUN_DIR}"
