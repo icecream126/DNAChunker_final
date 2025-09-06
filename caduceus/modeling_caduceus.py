@@ -480,7 +480,7 @@ class CaduceusForMaskedLM(CaduceusPreTrainedModel):
                 loss = weighted_cross_entropy(logits, labels, loss_weights, ignore_index=self.config.pad_token_id)
             else:
                 loss = cross_entropy(logits, labels, ignore_index=self.config.pad_token_id)
-
+    
         if not return_dict:
             output = (logits,) + outputs[1:]
             return (loss,) + output if loss is not None else output

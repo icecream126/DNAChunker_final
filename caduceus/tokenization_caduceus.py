@@ -47,7 +47,6 @@ class CaduceusTokenizer(PreTrainedTokenizer):
             complement_map = {"A": "T", "C": "G", "G": "C", "T": "A", "N": "N"}
         self.characters = characters
         self.model_max_length = model_max_length
-        self.motifs = torch.load(os.path.join(os.path.dirname(__file__), "motif.pt"))
 
         self._vocab_str_to_int = {
             "[CLS]": 0,
@@ -137,14 +136,13 @@ class CaduceusTokenizer(PreTrainedTokenizer):
     def save_vocabulary(self, save_directory: str, filename_prefix: Optional[str] = None) -> Tuple:
         return ()
     
-    def _calculate_boundaries(self, text: str) -> np.ndarray:
+    def _calculate_boundaries(self, text: str, motif_list: Optional[List[str]] = None) -> np.ndarray:
         """
         Calculate boundaries for a given text using regular expressions.
         """
-        # self.motifs should be a list of strings, e.g., ["ATAT", "GAGA", "CGC"]
         
         # 1. Filter out any empty strings and escape special regex characters
-        valid_motifs = [re.escape(m) for m in self.motifs if m]
+        valid_motifs = [re.escape(m) for m in motif_list if m]
         
         if not text or not valid_motifs:
             return np.zeros(len(text), dtype=np.int8)
@@ -177,6 +175,7 @@ class CaduceusTokenizer(PreTrainedTokenizer):
         max_length = kwargs.get("max_length", self.model_max_length)
         padding = kwargs.get("padding", "do_not_pad")
         truncation = kwargs.get("truncation", False)
+        motif_list = kwargs.get("motif_list", None)
 
         # Truncation
         if truncation and len(text) > max_length:
@@ -187,8 +186,10 @@ class CaduceusTokenizer(PreTrainedTokenizer):
         tokens = self._tokenize(text)
         input_ids = [self._convert_token_to_id(token) for token in tokens]
         
-        # if 
-        boundaries = self._calculate_boundaries(text)
+        if motif_list is not None:
+            boundaries = self._calculate_boundaries(text, motif_list)
+        else:
+            boundaries = None
 
         # Padding
         if padding == "max_length" and max_length is not None:

@@ -177,6 +177,9 @@ class CrossAttentionUpsampler(nn.Module):
         self.kv_proj = nn.Linear(d_model, 2 * d_model)
         self.out_proj = nn.Linear(d_model, d_model)
 
+        self.q_norm = RMSNorm(hidden_size=self.d_head)
+        self.k_norm = RMSNorm(hidden_size=self.d_head)\
+
     def forward(self, query, key_value, key_padding_mask=None):
         B, L_q, D = query.shape
         B, L_kv, D_kv = key_value.shape
@@ -187,6 +190,10 @@ class CrossAttentionUpsampler(nn.Module):
         q = q.view(B, L_q, self.n_head, self.d_head).transpose(1, 2)
         k = k.view(B, L_kv, self.n_head, self.d_head).transpose(1, 2)
         v = v.view(B, L_kv, self.n_head, self.d_head).transpose(1, 2)
+
+
+        q = self.q_norm(q)
+        k = self.k_norm(k)
 
         # Convert padding mask to attention mask
         attn_mask = None
@@ -596,6 +603,19 @@ class HNetMixerModel(nn.Module):
             config.d_model, eps=config.norm_epsilon, **factory_kwargs
         )
         self.norm_f = norm_f
+
+    def calculate_special_token_boundaries(self, input_ids):
+        """Calculate boundaries for special tokens."""
+        # boundaries should be length n+1 where n is input_ids length
+        boundaries = torch.zeros(input_ids.shape[0], input_ids.shape[1] + 1, dtype=torch.long, device=input_ids.device)
+        
+        special_tokens = (input_ids <= 6)
+        
+        # For each special token at position i, set boundaries[i] and boundaries[i+1]
+        boundaries[:, 1:][special_tokens] = 1  # Boundary before each special token
+        boundaries[:, :-1][special_tokens] = 1  # Boundary after each special token
+        
+        return boundaries[:, :-1]
         
     def forward(self, input_ids, inputs_embeds=None, output_hidden_states=False, boundaries=None):
         """Mixer forward."""
@@ -619,6 +639,10 @@ class HNetMixerModel(nn.Module):
 
         # 2. Chunking
         p_original, b_original = self.routing_module(x_hat)
+        special_token_boundaries = self.calculate_special_token_boundaries(input_ids)
+
+        b_original = (b_original.bool() | special_token_boundaries.bool()).float()
+        
         x_s, chunk_lengths = self.downsampler(x_hat, b_original)
 
         # 3. Main Network (Transformer)
@@ -668,6 +692,13 @@ class HNetMixerModel(nn.Module):
             )
         if output_hidden_states:
             all_hidden_states.append(hidden_states)
+
+        if ratio_loss.isnan().any():
+            print("Ratio loss is nan")
+            import pdb; pdb.set_trace()
+        if hidden_states.isnan().any():
+            print("Hidden states is nan")
+            import pdb; pdb.set_trace(1)
         return hidden_states, all_hidden_states, ratio_loss
 
 
@@ -684,8 +715,6 @@ def weighted_cross_entropy(logits, y, loss_weights, ignore_index=-100):
     """Weighted cross entropy loss (discounts certain tokens, e.g., repeated base pairs in genome)."""
     logits = logits.view(-1, logits.shape[-1])
     y = y.view(-1)
-    if ignore_index is None:
-        ignore_index = -100
     ce = F.cross_entropy(logits, y, ignore_index=ignore_index, reduction="none")
     loss_weights = loss_weights.view(-1)
     loss_weights[y == ignore_index] = 0.0

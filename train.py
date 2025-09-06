@@ -10,6 +10,7 @@ import time
 from functools import wraps
 from typing import Callable, List, Sequence
 
+
 import fsspec
 import hydra
 import pytorch_lightning as pl
@@ -339,14 +340,17 @@ class SequenceLightningModule(pl.LightningModule):
         self._process_state(batch, batch_idx, training=(prefix == "train"))
         x, y, w = self.forward(batch)
 
-        # Loss
+        ignore_index = self.hparams.task.loss.get("ignore_index")
+        if ignore_index is not None and (y == ignore_index).all():
+            return 0.0
         if prefix == 'train':
             loss = self.loss(x, y, **w)
         else:
+            # import pdb; pdb.set_trace()
             loss = self.loss_val(x, y, **w)
 
         # Add auxiliary losses
-        if 'aux_losses' in w:
+        if 'aux_losses' in w and len(w['aux_losses']) > 0:
             for k, v in w['aux_losses'].items():
                 weight = self.hparams.train.get('aux_loss_weights', {}).get(k, 1.0)
                 loss += weight * v
@@ -382,6 +386,9 @@ class SequenceLightningModule(pl.LightningModule):
             add_dataloader_idx=False,
             sync_dist=True,
         )
+        if loss.isnan():
+            print("Loss is nan")
+            import pdb; pdb.set_trace()
         return loss
 
     def on_train_epoch_start(self):
@@ -431,21 +438,9 @@ class SequenceLightningModule(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
-        # There's a bit of an annoying edge case with the first (0-th) epoch; it has to be excluded due to the initial
-        # sanity check
-        ema = (
-                self.val_loader_names[dataloader_idx].endswith("/ema")
-                and self.optimizers().optimizer.stepped
-        )
-        if ema:
-            self.optimizers().swap_ema()
-        loss = self._shared_step(
+        return self._shared_step(
             batch, batch_idx, prefix=self.val_loader_names[dataloader_idx]
         )
-        if ema:
-            self.optimizers().swap_ema()
-
-        return loss
 
     def test_step(self, batch, batch_idx, dataloader_idx=0):
         return self._shared_step(
@@ -558,13 +553,6 @@ class SequenceLightningModule(pl.LightningModule):
             test_loaders, "test"
         )
 
-        # Duplicate datasets for ema
-        if self.hparams.train.ema > 0.0:
-            val_loader_names += [name + "/ema" for name in val_loader_names]
-            val_loaders = val_loaders + val_loaders
-            test_loader_names += [name + "/ema" for name in test_loader_names]
-            test_loaders = test_loaders + test_loaders
-
         # adding option to only have val loader at eval (e.g., if test is duplicate)
         eval_loader_names = []
         eval_loaders = []
@@ -612,6 +600,8 @@ def create_trainer(config, **kwargs):
             log.info(f"Instantiating callback <{registry.callbacks[_name_]}>")
             callback._name_ = _name_
             callbacks.append(utils.instantiate(registry.callbacks, callback))
+
+    
 
     # Add ProgressiveResizing callback
     if config.callbacks.get("progressive_resizing", None) is not None:

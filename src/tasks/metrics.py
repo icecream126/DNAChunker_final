@@ -181,7 +181,11 @@ def padded_cross_entropy(logits, y, pad_mask, pad_value=-1):
 def cross_entropy(logits, y, ignore_index=-100):
     logits = logits.view(-1, logits.shape[-1])
     y = y.view(-1)
-    return F.cross_entropy(logits, y, ignore_index=ignore_index)
+    ce = F.cross_entropy(logits, y, ignore_index=ignore_index)
+    if ce.isnan().any():
+        print("CE is nan")
+        import pdb; pdb.set_trace()
+    return ce.mean()
 
 
 def soft_cross_entropy(logits, y, label_smoothing=0.0):

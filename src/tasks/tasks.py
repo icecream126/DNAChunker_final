@@ -322,7 +322,6 @@ class HG38Task(LMTask):
         """
         Need to modify metrics to include custom metrics
         """
-
         output_metrics = {
             name: U.discard_kwargs(M.output_metric_fns[name])(x, y, **kwargs)
             for name in self.metric_names if name in M.output_metric_fns

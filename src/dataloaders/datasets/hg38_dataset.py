@@ -112,6 +112,7 @@ class HG38Dataset(torch.utils.data.Dataset):
         self.mlm = mlm
         self.mlm_probability = mlm_probability
         self.motif_boundaries = motif_boundaries
+        self.motifs = torch.load("/workspace/caduceus_proj/caduceus/motif.pt")
         if self.mlm and self.mlm_probability <= 0.0:
             raise ValueError(f"`mlm_probability` has to be > 0.0, got {self.mlm_probability}.")
         if self.mlm:
@@ -178,13 +179,23 @@ class HG38Dataset(torch.utils.data.Dataset):
             print(row, "\nLength: ", end - start)
 
         if self.tokenizer_name == "char":
-            seq = self.tokenizer(
-                seq,
-                padding="max_length",
-                max_length=self.pad_max_length,
-                truncation=True,
-                add_special_tokens=False
-            )
+            if self.motif_boundaries:
+                seq = self.tokenizer(
+                    seq,
+                    padding="max_length",
+                    max_length=self.pad_max_length,
+                    truncation=True,
+                    add_special_tokens=False,
+                    motif_list=self.motifs
+                )
+            else:
+                seq = self.tokenizer(
+                    seq,
+                    padding="max_length",
+                    max_length=self.pad_max_length,
+                    truncation=True,
+                    add_special_tokens=False
+                )
 
             boundaries = seq["boundaries"]
             seq = seq["input_ids"]  # get input_ids
@@ -213,6 +224,8 @@ class HG38Dataset(torch.utils.data.Dataset):
         seq = torch.LongTensor(seq)
         if boundaries is not None and self.motif_boundaries:
             boundaries = torch.LongTensor(boundaries)
+        else:
+            boundaries = torch.zeros_like(seq, dtype=torch.long)
 
         # replace N token with a pad token, so we can ignore it in the loss
         seq = self.replace_value(seq, self.tokenizer._vocab_str_to_int["N"], self.tokenizer.pad_token_id)
@@ -230,7 +243,5 @@ class HG38Dataset(torch.utils.data.Dataset):
             data = seq[:-1].clone()
             target = seq[1:].clone()
 
-        if boundaries is not None and self.motif_boundaries:
-            return data, target, {"boundaries": boundaries}
-        else:
-            return data, target
+        
+        return data, target, {"boundaries": boundaries}

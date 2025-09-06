@@ -62,6 +62,7 @@ callbacks = {
     "params": "src.callbacks.params.ParamsLog",
     "timer": "src.callbacks.timer.Timer",
     "val_every_n_global_steps": "src.callbacks.validation.ValEveryNGlobalSteps",
+    "ema": "pytorch_lightning.callbacks.ema.EMACallback",
 }
 
 model_state_hook = {
