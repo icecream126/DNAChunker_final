@@ -23,7 +23,10 @@ except ImportError:
     except ImportError:
         RMSNorm, layer_norm_fn, rms_norm_fn = None, None, None
 
-from .configuration_hnet import HNetConfig
+try:
+    from .configuration_hnet import HNetConfig
+except ImportError:
+    from configuration_hnet import HNetConfig
 
 
 def rotate_half(x):
@@ -177,6 +180,14 @@ class CrossAttentionUpsampler(nn.Module):
         self.kv_proj = nn.Linear(d_model, 2 * d_model)
         self.out_proj = nn.Linear(d_model, d_model)
 
+        # Use LayerNorm if RMSNorm is not available
+        if RMSNorm is not None:
+            self.q_norm = RMSNorm(hidden_size=self.d_head)
+            self.k_norm = RMSNorm(hidden_size=self.d_head)
+        else:
+            self.q_norm = nn.LayerNorm(self.d_head)
+            self.k_norm = nn.LayerNorm(self.d_head)
+
     def forward(self, query, key_value, key_padding_mask=None):
         B, L_q, D = query.shape
         B, L_kv, D_kv = key_value.shape
@@ -187,6 +198,10 @@ class CrossAttentionUpsampler(nn.Module):
         q = q.view(B, L_q, self.n_head, self.d_head).transpose(1, 2)
         k = k.view(B, L_kv, self.n_head, self.d_head).transpose(1, 2)
         v = v.view(B, L_kv, self.n_head, self.d_head).transpose(1, 2)
+
+
+        q = self.q_norm(q)
+        k = self.k_norm(k)
 
         # Convert padding mask to attention mask
         attn_mask = None
@@ -538,16 +553,23 @@ class HNetMixerModel(nn.Module):
         else:
             raise ValueError(f"Invalid tokenizer type: {config.tokenizer_type}")
 
-        # HNet components
-        self.routing_module = RoutingModule(config.d_model)
+        # Two-stage chunking components
+        self.routing_module_stage1 = RoutingModule(config.d_model)
+        self.routing_module_stage2 = RoutingModule(config.d_model)
         self.downsampler = Downsampler()
-        self.upsampler = CrossAttentionUpsampler(config.d_model, config.transformer_n_head)
+        self.upsampler_stage1 = CrossAttentionUpsampler(config.d_model, config.transformer_n_head)
+        self.upsampler_stage2 = CrossAttentionUpsampler(config.d_model, config.transformer_n_head)
         self.residual_proj = nn.Linear(config.d_model, config.d_model)
-        self.target_ratio = getattr(config, "target_ratio", 0.3)
+        self.target_ratio_stage1 = getattr(config, "target_ratio_stage1", 0.5)  # Coarser chunks
+        self.target_ratio_stage2 = getattr(config, "target_ratio_stage2", 0.3)  # Finer chunks
         self.motif_ratio = getattr(config, "motif_ratio", 0.0)
 
-        # Encoder
-        self.encoder_layers = nn.ModuleList([
+        # Split encoder into two stages
+        n_enc1_layers = config.n_enc_layer // 2
+        n_enc2_layers = config.n_enc_layer - n_enc1_layers
+        
+        # Encoder Stage 1
+        self.encoder1_layers = nn.ModuleList([
             create_block(
                 config.d_model,
                 ssm_cfg=config.ssm_cfg,
@@ -561,7 +583,25 @@ class HNetMixerModel(nn.Module):
                 bidirectional_weight_tie=config.bidirectional_weight_tie,
                 **factory_kwargs,
             )
-            for i in range(config.n_enc_layer)
+            for i in range(n_enc1_layers)
+        ])
+        
+        # Encoder Stage 2
+        self.encoder2_layers = nn.ModuleList([
+            create_block(
+                config.d_model,
+                ssm_cfg=config.ssm_cfg,
+                norm_epsilon=config.norm_epsilon,
+                rms_norm=config.rms_norm,
+                residual_in_fp32=config.residual_in_fp32,
+                fused_add_norm=config.fused_add_norm,
+                layer_idx=n_enc1_layers + i,
+                bidirectional=config.bidirectional,
+                bidirectional_strategy=config.bidirectional_strategy,
+                bidirectional_weight_tie=config.bidirectional_weight_tie,
+                **factory_kwargs,
+            )
+            for i in range(n_enc2_layers)
         ])
 
         # Main model - Transformer
@@ -596,9 +636,23 @@ class HNetMixerModel(nn.Module):
             config.d_model, eps=config.norm_epsilon, **factory_kwargs
         )
         self.norm_f = norm_f
+
+    def calculate_special_token_boundaries(self, input_ids):
+        """Calculate boundaries for special tokens."""
+        # boundaries should be length n+1 where n is input_ids length
+        boundaries = torch.zeros(input_ids.shape[0], input_ids.shape[1] + 1, dtype=torch.long, device=input_ids.device)
+        
+        special_tokens = (input_ids <= 6)
+        
+        # For each special token at position i, set boundaries[i] and boundaries[i+1]
+        boundaries[:, 1:][special_tokens] = 1  # Boundary before each special token
+        boundaries[:, :-1][special_tokens] = 1  # Boundary after each special token
+        
+        return boundaries[:, :-1]
+    
         
     def forward(self, input_ids, inputs_embeds=None, output_hidden_states=False, boundaries=None):
-        """Mixer forward."""
+        """Two-stage chunking forward pass."""
         all_hidden_states = []
         if inputs_embeds is not None:
             hidden_states = inputs_embeds
@@ -607,50 +661,83 @@ class HNetMixerModel(nn.Module):
 
         residual = None
         
-        # HNet-style forward
         if output_hidden_states:
             all_hidden_states.append(hidden_states)
 
-        # 1. Encoder
-        residual_after_encoder = residual
-        for layer in self.encoder_layers:
-            hidden_states, residual_after_encoder = layer(hidden_states, residual_after_encoder, inference_params=None)
-        x_hat = hidden_states
+        # === STAGE 1: Encoder1 + First Chunking ===
+        # 1. Encoder Stage 1
+        residual_after_enc1 = residual
+        for layer in self.encoder1_layers:
+            hidden_states, residual_after_enc1 = layer(hidden_states, residual_after_enc1, inference_params=None)
+        x_hat_enc1 = hidden_states
 
-        # 2. Chunking
-        p_original, b_original = self.routing_module(x_hat)
-        x_s, chunk_lengths = self.downsampler(x_hat, b_original)
+        # 2. First Chunking (Coarse)
+        p_stage1, b_stage1 = self.routing_module_stage1(x_hat_enc1)
+        special_token_boundaries = self.calculate_special_token_boundaries(input_ids)
+        b_stage1 = (b_stage1.bool() | special_token_boundaries.bool()).float()
+        
+        x_s1, chunk_lengths_s1 = self.downsampler(x_hat_enc1, b_stage1)
 
-        # 3. Main Network (Transformer)
-        main_hidden_states = x_s
-        max_chunks = x_s.shape[1]
-        attention_mask = torch.arange(max_chunks, device=x_s.device)[None, :] >= chunk_lengths[:, None]
-        attention_mask = attention_mask[:, None, None, :]  # Shape: (batch, 1, 1, seq_len) for broadcasting
+        # === STAGE 2: Encoder2 + Second Chunking ===
+        # 3. Encoder Stage 2 (on coarse chunks)
+        residual_after_enc2 = None
+        for layer in self.encoder2_layers:
+            x_s1, residual_after_enc2 = layer(x_s1, residual_after_enc2, inference_params=None)
+        x_hat_enc2 = x_s1
+
+        # 4. Second Chunking (Fine)
+        p_stage2, b_stage2 = self.routing_module_stage2(x_hat_enc2)
+        x_s2, chunk_lengths_s2 = self.downsampler(x_hat_enc2, b_stage2)
+
+        # === MAIN MODEL: Process finest chunks ===
+        # 5. Main Network (Transformer) - processes finest chunks
+        main_hidden_states = x_s2
+        max_chunks = x_s2.shape[1]
+        attention_mask = torch.arange(max_chunks, device=x_s2.device)[None, :] >= chunk_lengths_s2[:, None]
+        attention_mask = attention_mask[:, None, None, :]
+        
         for layer in self.main_model:
             main_hidden_states = layer(main_hidden_states, attention_mask=attention_mask)
+        
         if main_hidden_states.isnan().any():
             print("Main hidden states is nan")
             import pdb; pdb.set_trace()
-        z_hat_s = main_hidden_states
-        all_hidden_states.append((main_hidden_states, attention_mask))
+        z_hat_s2 = main_hidden_states
+        all_hidden_states.append((z_hat_s2, attention_mask))
 
-        # 4. Dechunking with Cross-Attention
-        max_chunks = z_hat_s.shape[1]
-        key_padding_mask = torch.arange(max_chunks, device=z_hat_s.device)[None, :] >= chunk_lengths[:, None]
-        z_dechunked = self.upsampler(query=x_hat, key_value=z_hat_s, key_padding_mask=key_padding_mask)
+        # === TWO-STAGE DECHUNKING ===
+        # 6. First Dechunking: Fine chunks -> Coarse chunks
+        max_chunks_s2 = z_hat_s2.shape[1]
+        key_padding_mask_s2 = torch.arange(max_chunks_s2, device=z_hat_s2.device)[None, :] >= chunk_lengths_s2[:, None]
+        z_dechunked_s1 = self.upsampler_stage2(query=x_hat_enc2, key_value=z_hat_s2, key_padding_mask=key_padding_mask_s2)
 
-        # 5. Decoder
-        hidden_states = z_dechunked + self.residual_proj(x_hat)
-        residual = None # Residual is handled inside the Mamba blocks
+        # 7. Second Dechunking: Coarse chunks -> Full sequence
+        max_chunks_s1 = z_dechunked_s1.shape[1]
+        key_padding_mask_s1 = torch.arange(max_chunks_s1, device=z_dechunked_s1.device)[None, :] >= chunk_lengths_s1[:, None]
+        z_dechunked = self.upsampler_stage1(query=x_hat_enc1, key_value=z_dechunked_s1, key_padding_mask=key_padding_mask_s1)
+
+        # === DECODER ===
+        # 8. Decoder
+        hidden_states = z_dechunked + self.residual_proj(x_hat_enc1)
+        residual = None
         for layer in self.decoder_layers:
             hidden_states, residual = layer(hidden_states, residual, inference_params=None)
 
-        # Ratio Loss
-        f = b_original.sum(dim=1) / b_original.shape[1]
-        G = p_original.mean(dim=1)
-        N = 1.0 / self.target_ratio
-        ratio_loss = (N / (N - 1)) * ((N - 1) * f * G + (1 - f) * (1 - G)) if N > 1 else torch.zeros_like(f)
-        ratio_loss = ratio_loss.mean()
+        # === LOSS CALCULATION ===
+        # Combined ratio loss from both stages
+        f1 = b_stage1.sum(dim=1) / b_stage1.shape[1]
+        G1 = p_stage1.mean(dim=1)
+        N1 = 1.0 / self.target_ratio_stage1
+        ratio_loss_stage1 = (N1 / (N1 - 1)) * ((N1 - 1) * f1 * G1 + (1 - f1) * (1 - G1)) if N1 > 1 else torch.zeros_like(f1)
+        ratio_loss_stage1 = ratio_loss_stage1.mean()
+
+        f2 = b_stage2.sum(dim=1) / b_stage2.shape[1]
+        G2 = p_stage2.mean(dim=1)
+        N2 = 1.0 / self.target_ratio_stage2
+        ratio_loss_stage2 = (N2 / (N2 - 1)) * ((N2 - 1) * f2 * G2 + (1 - f2) * (1 - G2)) if N2 > 1 else torch.zeros_like(f2)
+        ratio_loss_stage2 = ratio_loss_stage2.mean()
+
+        ratio_loss = ratio_loss_stage1 + ratio_loss_stage2
 
         if not self.fused_add_norm:
             residual = (hidden_states + residual) if residual is not None else hidden_states
@@ -669,6 +756,7 @@ class HNetMixerModel(nn.Module):
             )
         if output_hidden_states:
             all_hidden_states.append(hidden_states)
+
         return hidden_states, all_hidden_states, ratio_loss
 
 
@@ -685,8 +773,6 @@ def weighted_cross_entropy(logits, y, loss_weights, ignore_index=-100):
     """Weighted cross entropy loss (discounts certain tokens, e.g., repeated base pairs in genome)."""
     logits = logits.view(-1, logits.shape[-1])
     y = y.view(-1)
-    if ignore_index is None:
-        ignore_index = -100
     ce = F.cross_entropy(logits, y, ignore_index=ignore_index, reduction="none")
     loss_weights = loss_weights.view(-1)
     loss_weights[y == ignore_index] = 0.0

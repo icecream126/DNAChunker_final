@@ -32,6 +32,7 @@ model = {
     "caduceus_hnet_transformer_lm": "caduceus_hnet_transformer.modeling_caduceus_hnet_transformer.CaduceusHNetTransformerForMaskedLM",
     "hnet_lm": "hnet.modeling_hnet.HNetTransformerForMaskedLM",
     "hnet_mlm": "hnet_mlm.modeling_hnet.HNetTransformerForMaskedLM",
+    "hnet_twostage": "hnet_twostage.modeling_hnet.HNetTransformer",
 
     # Downstream task embedding backbones
     "dna_embedding": "src.models.sequence.dna_embedding.DNAEmbeddingModel",
