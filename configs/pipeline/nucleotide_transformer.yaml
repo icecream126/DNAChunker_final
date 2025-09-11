@@ -6,7 +6,7 @@ defaults:
   - /task: multiclass_classification
   - /optimizer: adamw
   - /scheduler: plateau
-  - /callbacks: [base, checkpoint, early_stopping]
+  - /callbacks: [base, checkpoint]
 
 task:
   loss:

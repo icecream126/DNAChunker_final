@@ -199,47 +199,41 @@ class DNAEmbeddingModelCaduceus(DNAEmbeddingModel):
         return self.caduceus(input_ids, return_dict=False), None
 
 
-# class DNAEmbeddingModelCaduceusHNet(DNAEmbeddingModel):
-#     """Custom DNA Embedding Model that is compatible with Caduceus-HNet models."""
+class DNAEmbeddingModelCaduceusHNet(DNAEmbeddingModel):
+    """Custom DNA Embedding Model that is compatible with Caduceus-HNet models."""
 
-#     def __init__(
-#             self,
-#             config: CaduceusHNetConfig,
-#             device=None,
-#             dtype=None,
-#             conjoin_train=False,
-#             conjoin_test=False,
-#     ):
-#         super(DNAEmbeddingModel, self).__init__()  # nn.Module.__init__()
-#         self.config = config
-#         self.d_model = config.d_model  # for decoder
-#         factory_kwargs = {"device": device, "dtype": dtype}
-#         self.caduceus = HNet(
-#             config=config,
-#             **factory_kwargs,
-#         )
+    def __init__(
+            self,
+            config: CaduceusHNetConfig,
+            device=None,
+            dtype=None,
+            conjoin_train=False,
+            conjoin_test=False,
+    ):
+        super(DNAEmbeddingModel, self).__init__()  # nn.Module.__init__()
+        self.config = config
+        self.d_model = config.d_model  # for decoder
+        factory_kwargs = {"device": device, "dtype": dtype}
 
-#         self.conjoin_train = conjoin_train
-#         self.conjoin_test = conjoin_test
+        self.caduceus = CaduceusHNet(
+            config=config,
+            **factory_kwargs,
+        )
+        # for layer in self.caduceus.backbone.layers[:self.caduceus.n_enc_layer]:
+        #     for param in layer.parameters():
+        #         param.requires_grad = False
+        for param in self.caduceus.backbone.routing_module.parameters():
+            param.requires_grad = False
 
-#     def forward(self, input_ids, position_ids=None, inference_params=None, state=None):  # state for the repo interface
-#         """Caduceus-HNet backbone-specific forward pass that does not use `position_ids`."""
-#         # import pdb; pdb.set_trace()
-#         # if self.config.rcps:  # Hidden states have 2 * d_model channels for RCPS
-#         #     hidden_states = self.caduceus_hnet(input_ids, return_dict=False)
-#         #     num_chan = hidden_states.shape[-1]
-#         #     return torch.stack(
-#         #         [hidden_states[..., :num_chan // 2], torch.flip(hidden_states[..., num_chan // 2:], dims=[1, 2])],
-#         #         dim=-1
-#         #     ), None
-#         # if self.conjoin_train or (self.conjoin_test and not self.training):  # For conjoining / post-hoc conjoining
-#         #     assert input_ids.ndim == 3, "Input must be 3D tensor, where channels corresponds to forward and rc strands"
-#         #     hidden_states = self.caduceus_hnet(input_ids[..., 0], return_dict=False)
-#         #     hidden_states_rc = self.caduceus_hnet(input_ids[..., 1], return_dict=False)
-#         #     # Stack along channel dimension (dim=-1)
-#         #     return torch.stack([hidden_states, hidden_states_rc], dim=-1), None
+        self.conjoin_train = conjoin_train
+        self.conjoin_test = conjoin_test
 
-#         return self.caduceus(input_ids, return_dict=False)[0], None
+    def forward(self, input_ids, position_ids=None, inference_params=None, state=None):  # state for the repo interface
+        """Caduceus-HNet backbone-specific forward pass that does not use `position_ids`."""
+        out = self.caduceus(input_ids, return_dict=True, output_hidden_states=True)
+        hid_states, attn_mask =  out['hidden_states'][1]
+        hid_states = hid_states * (attn_mask.squeeze().unsqueeze(-1)).float()
+        return hid_states, None
 
 # class DNAEmbeddingModelCaduceusHNetMotif(DNAEmbeddingModel):
 #     """Custom DNA Embedding Model that is compatible with Caduceus-HNet models."""
