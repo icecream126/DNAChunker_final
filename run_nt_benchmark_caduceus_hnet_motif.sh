@@ -10,10 +10,10 @@ DATASET_NAMES=(
     "H3"
     "H3K4me1"
     "H3K4me2"
-    "H3K4me3"
-    "H3K9ac"
-    "splice_sites_acceptors"
-    "splice_sites_donors"
+    # "H3K4me3"
+    # "H3K9ac"
+    # "splice_sites_acceptors"
+    # "splice_sites_donors"
 )
 
 # Parse command line arguments for GPU IDs
@@ -68,19 +68,20 @@ run_training() {
         experiment=hg38/nucleotide_transformer \
         callbacks.model_checkpoint_every_n_steps.every_n_train_steps=5000 \
         dataset.train_val_split_seed=$val_idx \
-        dataset.batch_size=2048 \
+        dataset.batch_size=32 \
         dataset.rc_aug=false \
         +dataset.conjoin_test=false \
-        model._name_=dna_embedding_caduceus_hnet_motif \
-        +model.config_path=/workspace/caduceus/outputs/2025-08-31/caduceus_hnet_motif/model_config.json \
+        model._name_=dna_embedding_hnet \
+        +model.config_path=/workspace/caduceus_proj/outputs/pretrain/hg38/hnet_seqlen-k_d_model-1024_n_enc_layer-2_n_main_layer-8_n_dec_layer-2_lr-5e-4_tokenizer_type-default/model_config.json \
         +model.conjoin_test=false \
         +decoder.conjoin_train=false \
         +decoder.conjoin_test=false \
-        optimizer.lr=5e-4 \
-        train.pretrained_model_path=/workspace/caduceus/outputs/2025-08-31/caduceus_hnet_motif/checkpoints/last.ckpt \
-        trainer.max_epochs=20 \
+        optimizer.lr=1e-5 \
+        train.pretrained_model_path=/workspace/caduceus_proj/outputs/pretrain/hg38/hnet_seqlen-k_d_model-1024_n_enc_layer-2_n_main_layer-8_n_dec_layer-2_lr-5e-4_tokenizer_type-default/checkpoints/last.ckpt \
+        trainer.max_epochs=10 \
+        wandb.name=hnet_motif_${dataset_name}_attn_pool_val_${val_idx} \
         dataset.dataset_name=$dataset_name \
-        model=caduceus_hnet 
+        model=hnet 
     echo "Completed training for dataset: $dataset_name on GPU: $gpu_id"
 }
 
@@ -107,7 +108,7 @@ manage_gpus() {
 
 # Run training for each dataset
 for dataset_name in "${DATASET_NAMES[@]}"; do
-    for val_idx in $(seq 0 2); do
+    for val_idx in $(seq 0 0); do
         echo "Waiting for available GPU for dataset: $dataset_name"
         
         # Wait for available GPU

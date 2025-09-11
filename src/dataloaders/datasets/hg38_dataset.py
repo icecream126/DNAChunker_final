@@ -8,11 +8,13 @@ from pathlib import Path
 import pandas as pd
 import torch
 from pyfaidx import Fasta
+import fsspec
 
 from src.dataloaders.utils.mlm import mlm_getitem
 from src.dataloaders.utils.rc import coin_flip, string_reverse_complement
 
 MAX_ALLOWED_LENGTH = 2 ** 20
+_MOTIFS_CACHE = None
 
 
 class FastaInterval:
@@ -112,7 +114,16 @@ class HG38Dataset(torch.utils.data.Dataset):
         self.mlm = mlm
         self.mlm_probability = mlm_probability
         self.motif_boundaries = motif_boundaries
-        self.motifs = torch.load("/workspace/caduceus_proj/caduceus/motif.pt")
+        
+        # Use global cache to avoid multiple file opens
+        global _MOTIFS_CACHE
+        if self.motif_boundaries:
+            if _MOTIFS_CACHE is None:
+                with open("/workspace/caduceus_proj/caduceus/motif.pt", "rb") as f:
+                    _MOTIFS_CACHE = torch.load(f, map_location="cpu")
+            self.motifs = _MOTIFS_CACHE
+        else:
+            self.motifs = None
         if self.mlm and self.mlm_probability <= 0.0:
             raise ValueError(f"`mlm_probability` has to be > 0.0, got {self.mlm_probability}.")
         if self.mlm:

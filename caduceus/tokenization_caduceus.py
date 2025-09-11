@@ -138,30 +138,39 @@ class CaduceusTokenizer(PreTrainedTokenizer):
     
     def _calculate_boundaries(self, text: str, motif_list: Optional[List[str]] = None) -> np.ndarray:
         """
-        Calculate boundaries for a given text using regular expressions.
+        Calculate boundaries using efficient string operations (DDP-friendly and no file descriptor issues).
         """
-        
-        # 1. Filter out any empty strings and escape special regex characters
-        valid_motifs = [re.escape(m) for m in motif_list if m]
-        
-        if not text or not valid_motifs:
+        if not text or not motif_list:
             return np.zeros(len(text), dtype=np.int8)
-
-        # 2. Join the list into a single regex string pattern
-        combined_pattern = "|".join(valid_motifs)
+        
+        # Filter out empty strings
+        valid_motifs = [m for m in motif_list if m]
+        if not valid_motifs:
+            return np.zeros(len(text), dtype=np.int8)
         
         boundaries = np.zeros(len(text), dtype=np.int8)
-
-        # 3. Use the combined string pattern in finditer
-        for match in re.finditer(combined_pattern, text):
-            start_index = match.start()
-            end_index = match.end() - 1
-            
-            boundaries[start_index] = 1
-            boundaries[end_index] = 1
+        
+        # Use efficient string.find() method for each motif
+        for motif in valid_motifs:
+            if not motif:  # Skip empty motifs
+                continue
+                
+            start = 0
+            while True:
+                # Find the next occurrence of the motif
+                pos = text.find(motif, start)
+                if pos == -1:  # No more occurrences
+                    break
+                
+                # Set boundaries at start and end of motif
+                boundaries[pos] = 1
+                boundaries[pos + len(motif) - 1] = 1
+                
+                # Move start position to avoid infinite loops
+                start = pos + 1
         
         return boundaries
-        
+
     def __call__(self, text, **kwargs):
         """
         Override the __call__ method to include boundaries and handle padding.

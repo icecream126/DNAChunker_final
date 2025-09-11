@@ -889,10 +889,6 @@ def cross_entropy(logits, y, ignore_index=-100):
     y = y.view(-1)
     if ignore_index is None:
         ignore_index = -100
-    ce = F.cross_entropy(logits, y, ignore_index=ignore_index, reduction="none")
-    if ce.isnan().any():
-        print("CE is nan")
-        import pdb; pdb.set_trace()
     return F.cross_entropy(logits, y, ignore_index=ignore_index)
 
 
@@ -903,16 +899,10 @@ def weighted_cross_entropy(logits, y, loss_weights, ignore_index=-100):
     if ignore_index is None:
         ignore_index = -100
     ce = F.cross_entropy(logits, y, ignore_index=ignore_index, reduction="none")
-    if ce.isnan().any():
-        print("WEIGHTED CE is nan")
-        import pdb; pdb.set_trace()
     loss_weights = loss_weights.view(-1)
     loss_weights[y == ignore_index] = 0.0
     # TODO: Follows GPN implementation, but should we remove weight normalization?
-    if loss_weights.sum()  == 0:
-        return  ce.sum()
-    else:
-        return (ce * (loss_weights / loss_weights.sum())).sum()
+    return (ce * (loss_weights / loss_weights.sum())).sum()
 
 
 class CaduceusPreTrainedModel(PreTrainedModel):
@@ -1091,15 +1081,9 @@ class CaduceusHNetForMaskedLM(CaduceusPreTrainedModel):
                 loss = cross_entropy(logits, labels, ignore_index=self.config.pad_token_id)
             
             ratio_loss = outputs.ratio_loss if return_dict else outputs[-1]
-
-            if ratio_loss.isnan().any():
-                print("Ratio loss is nan")
-                import pdb; pdb.set_trace()
             if ratio_loss is not None:
                 loss += ratio_loss
-        if loss.isnan().any():
-            print("Loss is nan")
-            import pdb; pdb.set_trace()
+
         if not return_dict:
             output = (logits,) + outputs[1:]
             return (loss,) + output if loss is not None else output

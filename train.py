@@ -339,22 +339,20 @@ class SequenceLightningModule(pl.LightningModule):
         """Shared step logic between training, validation, and test"""
         self._process_state(batch, batch_idx, training=(prefix == "train"))
         x, y, w = self.forward(batch)
-
-        ignore_index = self.hparams.task.loss.get("ignore_index")
-        if ignore_index is not None and (y == ignore_index).all():
-            return 0.0
         if prefix == 'train':
             loss = self.loss(x, y, **w)
         else:
             # import pdb; pdb.set_trace()
             loss = self.loss_val(x, y, **w)
 
+        sync_dist = True
+
         # Add auxiliary losses
         if 'aux_losses' in w and len(w['aux_losses']) > 0:
             for k, v in w['aux_losses'].items():
                 weight = self.hparams.train.get('aux_loss_weights', {}).get(k, 1.0)
                 loss += weight * v
-                self.log(f"{prefix}/{k}", v, on_step=True, on_epoch=False, prog_bar=False, sync_dist=True)
+                self.log(f"{prefix}/{k}", v, on_step=True, on_epoch=False, prog_bar=False, sync_dist=sync_dist)
 
         # Metrics
         metrics = self.metrics(x, y, **w)
@@ -373,7 +371,7 @@ class SequenceLightningModule(pl.LightningModule):
             on_epoch=True,
             prog_bar=True,
             add_dataloader_idx=False,
-            sync_dist=True,
+            sync_dist=sync_dist,
         )
 
         # log the whole dict, otherwise lightning takes the mean to reduce it
@@ -384,7 +382,7 @@ class SequenceLightningModule(pl.LightningModule):
             on_epoch=True,
             prog_bar=True,
             add_dataloader_idx=False,
-            sync_dist=True,
+            sync_dist=sync_dist,
         )
         if loss.isnan():
             print("Loss is nan")
@@ -397,6 +395,8 @@ class SequenceLightningModule(pl.LightningModule):
 
     def training_epoch_end(self, outputs):
         # Log training torchmetrics
+        if None in outputs:
+            outputs = [o for o in outputs if o is not None]
         super().training_epoch_end(outputs)
 
     def on_validation_epoch_start(self):
@@ -406,6 +406,8 @@ class SequenceLightningModule(pl.LightningModule):
 
     def validation_epoch_end(self, outputs):
         # Log all validation torchmetrics
+        if None in outputs:
+            outputs = [o for o in outputs if o is not None]
         super().validation_epoch_end(outputs)
 
     def on_test_epoch_start(self):
@@ -415,6 +417,8 @@ class SequenceLightningModule(pl.LightningModule):
 
     def test_epoch_end(self, outputs):
         # Log all test torchmetrics
+        if None in outputs:
+            outputs = [o for o in outputs if o is not None]
         super().test_epoch_end(outputs)
 
     def training_step(self, batch, batch_idx, dataloader_idx=0):

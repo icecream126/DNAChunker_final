@@ -36,6 +36,80 @@ class Decoder(nn.Module):
         """
         return self.forward(x.unsqueeze(1)).squeeze(1)
 
+class AttnPool(nn.Module):
+    """Attention pooling layer for sequence aggregation that respects valid sequence lengths."""
+    
+    def __init__(self, d_model=None, num_heads=4, dropout=0.1, d_output=1):
+        super().__init__()
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.dropout = dropout
+        
+        if d_model is not None:
+            self.attention = nn.MultiheadAttention(
+                embed_dim=d_model,
+                num_heads=num_heads,
+                dropout=dropout,
+                batch_first=True
+            )
+            self.norm = nn.LayerNorm(d_model)
+        else:
+            self.attention = None
+            self.norm = None
+
+        self.linear = nn.Linear(d_model, d_output)
+    
+    def forward(self, x, lengths=None):
+        """
+        x: (batch, seq_len, d_model)
+        lengths: (batch,) - actual sequence lengths (optional)
+        Returns: (batch, d_model) - pooled representation
+        """
+        if self.attention is None:
+            # Initialize attention layer with input dimensions
+            d_model = x.size(-1)
+            self.attention = nn.MultiheadAttention(
+                embed_dim=d_model,
+                num_heads=min(self.num_heads, d_model // 64),  # Ensure num_heads doesn't exceed d_model
+                dropout=self.dropout,
+                batch_first=True
+            ).to(x.device)
+            self.norm = nn.LayerNorm(d_model).to(x.device)
+        
+        batch_size, seq_len, d_model = x.shape
+        
+        # Create attention mask for valid tokens
+        if lengths is not None:
+            # Create mask: True for valid tokens, False for padding
+            mask = torch.arange(seq_len, device=x.device).expand(batch_size, seq_len) < lengths.unsqueeze(1)
+            # Convert to attention mask format (True = ignore, False = attend)
+            attn_mask = ~mask
+        else:
+            attn_mask = None
+        
+        # Create a learnable query for attention pooling
+        if lengths is not None:
+            # Use mean of valid tokens only
+            query = torch.zeros(batch_size, 1, d_model, device=x.device)
+            for i, length in enumerate(lengths):
+                if length > 0:
+                    query[i, 0] = x[i, :length].mean(dim=0)
+        else:
+            # Use mean of all tokens
+            query = torch.mean(x, dim=1, keepdim=True)  # (batch, 1, d_model)
+        
+        # Apply attention
+        attn_output, attn_weights = self.attention(
+            query=query,
+            key=x,
+            value=x,
+            key_padding_mask=attn_mask
+        )
+        
+        # Apply layer norm and return pooled representation
+        output = self.norm(attn_output.squeeze(1))  # (batch, d_model)
+        output = self.linear(output)
+        return output
 
 class SequenceDecoder(Decoder):
     def __init__(
@@ -43,8 +117,6 @@ class SequenceDecoder(Decoder):
             conjoin_train=False, conjoin_test=False
     ):
         super().__init__()
-        self.output_transform = nn.Identity() if d_output is None else nn.Linear(d_model, d_output)
-
         if l_output is None:
             self.l_output = None
             self.squeeze = False
@@ -57,11 +129,17 @@ class SequenceDecoder(Decoder):
             self.l_output = l_output
             self.squeeze = False
 
+
         self.use_lengths = use_lengths
         self.mode = mode
 
         if mode == 'ragged':
             assert not use_lengths
+
+        if mode == 'attn_pool':
+            self.output_transform = AttnPool(d_model=d_model, d_output=d_output)
+        else:
+            self.output_transform = nn.Identity() if d_output is None else nn.Linear(d_model, d_output)
 
         self.conjoin_train = conjoin_train
         self.conjoin_test = conjoin_test
@@ -107,12 +185,16 @@ class SequenceDecoder(Decoder):
                 )
                 s = s / denom
                 return s
-
         elif self.mode == "sum":
             # TODO use same restrict function as pool case
             def restrict(x_seq):
                 """Cumulative sum last l_output elements of sequence."""
                 return torch.cumsum(x_seq, dim=-2)[..., -l_output:, :]
+        elif self.mode == 'attn_pool':
+            def restrict(x_seq):
+                """Ragged aggregation."""
+                # remove any additional padding (beyond max length of any sequence in the batch)
+                return x_seq
         elif self.mode == 'ragged':
             assert lengths is not None, "lengths must be provided for ragged mode"
 
@@ -124,6 +206,7 @@ class SequenceDecoder(Decoder):
             raise NotImplementedError(
                 "Mode must be ['last' | 'first' | 'pool' | 'sum' | 'ragged']"
             )
+
 
         # Restrict to actual length of sequence
         if self.use_lengths:
@@ -137,8 +220,7 @@ class SequenceDecoder(Decoder):
             )
         else:
             x = restrict(x)
-
-        if squeeze:
+        if squeeze and self.mode != 'attn_pool':
             assert x.size(1) == 1
             x = x.squeeze(1)
         
@@ -149,6 +231,12 @@ class SequenceDecoder(Decoder):
             x = self.output_transform(x.squeeze())
             x_rc = self.output_transform(x_rc.squeeze())
             x = (x + x_rc) / 2
+        elif self.mode == 'attn_pool':
+            if lengths is not None:
+                attn_mask = torch.arange(x.size(1), device=x.device) < lengths.unsqueeze(1)
+                x = self.output_transform(x.squeeze(), attn_mask=attn_mask)
+            else:
+                x = self.output_transform(x.squeeze())
         else:
             x = self.output_transform(x)
 

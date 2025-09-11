@@ -213,7 +213,7 @@ class CaduceusMixerModel(nn.Module):
         )
         self.norm_f = norm_f if (config.fused_add_norm or not config.rcps) else RCPSAddNormWrapper(norm_f)
 
-    def forward(self, input_ids, inputs_embeds=None, output_hidden_states=False):
+    def forward(self, input_ids, inputs_embeds=None, output_hidden_states=False, boundaries=None):
         """Mixer forward."""
         all_hidden_states = []
         if inputs_embeds is not None:
@@ -454,6 +454,7 @@ class CaduceusForMaskedLM(CaduceusPreTrainedModel):
         loss_weights: Optional[torch.FloatTensor] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        boundaries: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple, MaskedLMOutput]:
         """HF-compatible forward method."""
 

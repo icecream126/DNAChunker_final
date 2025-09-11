@@ -31,6 +31,7 @@ model = {
     "caduceus_hnet_lm": "caduceus_hnet.modeling_caduceus_hnet.CaduceusHNetForMaskedLM",
     "caduceus_hnet_transformer_lm": "caduceus_hnet_transformer.modeling_caduceus_hnet_transformer.CaduceusHNetTransformerForMaskedLM",
     "hnet_lm": "hnet.modeling_hnet.HNetTransformerForMaskedLM",
+    "hnet_mlm": "hnet_mlm.modeling_hnet.HNetTransformerForMaskedLM",
 
     # Downstream task embedding backbones
     "dna_embedding": "src.models.sequence.dna_embedding.DNAEmbeddingModel",
@@ -38,6 +39,7 @@ model = {
     "dna_embedding_caduceus": "src.models.sequence.dna_embedding.DNAEmbeddingModelCaduceus",
     "dna_embedding_caduceus_hnet": "src.models.sequence.dna_embedding.DNAEmbeddingModelCaduceusHNet",
     "dna_embedding_caduceus_hnet_motif": "src.models.sequence.dna_embedding.DNAEmbeddingModelCaduceusHNetMotif",
+    "dna_embedding_hnet": "src.models.sequence.dna_embedding.DNAEmbeddingModelHNet",
 
     # Baseline for genomics benchmark
     "genomics_benchmark_cnn": "src.models.baseline.genomics_benchmark_cnn.GenomicsBenchmarkCNN",

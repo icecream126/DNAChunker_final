@@ -12,10 +12,11 @@ DEC_LAYER=2
 LR="5e-4"
 TOKENIZER_TYPE="default"
 TARGET_RATIO="0.3"
+CKPT_PATH="/workspace/caduceus_proj/outputs/pretrain/hg38/hnet_seqlen-k_d_model-1024_n_enc_layer-2_n_main_layer-8_n_dec_layer-2_lr-5e-4_tokenizer_type-default/checkpoints/last.ckpt"
 
 BATCH_SIZE=8
 SEQLEN_DIS="$(echo "scale=0; ${SEQLEN} / 1000" | bc)k"
-WANDB_NAME="hnet_seqlen-${SEQLEN_DIS}_d_model-${D_MODEL}_n_enc_layer-${ENC_LAYER}_n_main_layer-${MAIN_LAYER}_n_dec_layer-${DEC_LAYER}_lr-${LR}_tokenizer_type-${TOKENIZER_TYPE}"
+WANDB_NAME="RESUME_hnet_seqlen-${SEQLEN_DIS}_d_model-${D_MODEL}_n_enc_layer-${ENC_LAYER}_n_main_layer-${MAIN_LAYER}_n_dec_layer-${DEC_LAYER}_lr-${LR}_tokenizer_type-${TOKENIZER_TYPE}"
 HYDRA_RUN_DIR="./outputs/pretrain/hg38/${WANDB_NAME}"
 
 mkdir -p "${HYDRA_RUN_DIR}"
@@ -41,6 +42,7 @@ python -m train \
   trainer.devices=${NUM_DEVICES} \
   trainer.accumulate_grad_batches=1 \
   trainer.gradient_clip_val=1 \
+  train.ckpt=${CKPT_PATH} \
   +trainer.strategy=ddp \
   +trainer.val_check_interval=$((${MAX_STEPS} / 5)) \
   wandb.group=pretrain_hg38 \

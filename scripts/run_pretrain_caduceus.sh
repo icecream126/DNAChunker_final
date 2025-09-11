@@ -14,20 +14,20 @@
 
 export HYDRA_FULL_ERROR=1
 
-NUM_DEVICES=8
+NUM_DEVICES=2
 
 # Run script
-SEQLEN=1024
+SEQLEN=1024 
 MAX_STEPS=50000
-D_MODEL=256
-N_LAYER=8
+D_MODEL=128
+N_LAYER=2
 LR="8e-3"
 BIDIRECTIONAL_STRATEGY="add"
 BIDIRECTIONAL_WEIGHT_TIE="true"
 RCPS="true"
 RC_AUG="false"
 
-BATCH_SIZE=256
+BATCH_SIZE=128
 SEQLEN_DIS="$(echo "scale=0; ${SEQLEN} / 1000" | bc)k"
 WANDB_NAME="caduceus-ps_seqlen-${SEQLEN_DIS}_d_model-${D_MODEL}_n_layer-${N_LAYER}_lr-${LR}"
 HYDRA_RUN_DIR="./outputs/pretrain/hg38/${WANDB_NAME}"
@@ -51,10 +51,10 @@ python -m train \
   model.config.bidirectional_weight_tie=${BIDIRECTIONAL_WEIGHT_TIE} \
   model.config.rcps=${RCPS} \
   optimizer.lr="${LR}" \
-  train.global_batch_size=${BATCH_SIZE} * ${NUM_DEVICES} \
+  train.global_batch_size=$(( BATCH_SIZE * NUM_DEVICES )) \
   trainer.max_steps=${MAX_STEPS} \
   trainer.devices=${NUM_DEVICES} \
-  +trainer.val_check_interval=$(( MAX_STEPS / 5 )) \
+  +trainer.val_check_interval=1 \
   wandb.group=pretrain_hg38 \
   wandb.name="${WANDB_NAME}" \
   hydra.run.dir="${HYDRA_RUN_DIR}"

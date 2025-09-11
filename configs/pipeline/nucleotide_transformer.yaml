@@ -23,4 +23,4 @@ encoder: id
 # we need this for classification!
 decoder:
   _name_: sequence
-  mode: pool
+  mode: attn_pool

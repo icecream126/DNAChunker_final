@@ -109,7 +109,6 @@ class NucleotideTransformerDataset(torch.utils.data.Dataset):
 
         # need to wrap in list
         target = torch.LongTensor([y])
-
         # `seq` has shape:
         #     - (seq_len,) if not conjoining
         #     - (seq_len, 2) for conjoining
