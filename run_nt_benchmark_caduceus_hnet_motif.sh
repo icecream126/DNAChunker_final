@@ -3,7 +3,7 @@
 # Set of dataset names to iterate through
 DATASET_NAMES=(
     "enhancers"
-    "enhancers_types"
+    # "enhancers_types"
     # "H3"
     # "H3K4me1"
     # "H3K4me2"
@@ -14,11 +14,11 @@ DATASET_NAMES=(
     # "H3K79me3"
     # "H4"
     # "H4ac"
-    "promoter_all"
-    "promoter_no_tata"
-    "promoter_tata"
+    # "promoter_all"
+    # "promoter_no_tata"
+    # "promoter_tata"
     # "splice_sites_acceptors"
-    "splice_sites_all"
+    # "splice_sites_all"
     # "splice_sites_donors"
 )
 # Parse command line arguments for GPU IDs
@@ -96,7 +96,7 @@ run_training() {
         trainer.max_epochs=20 \
         dataset.dataset_name=$dataset_name \
         train.monitor=val/proper_mcc \
-        wandb.name=FREEZE_ENC_Proper_MCC_HNET_MLM_${pooling}_${dataset_name}_val_idx-${val_idx}_lr-${lr} \
+        wandb.name=WO_EARLY_STOPPING_FREEZE_ENC_Proper_MCC_HNET_MLM_${pooling}_${dataset_name}_val_idx-${val_idx}_lr-${lr} \
         decoder.mode=${pooling} \
         trainer.precision=16 \
         model=hnet 
@@ -128,7 +128,8 @@ manage_gpus() {
 for dataset_name in "${DATASET_NAMES[@]}"; do
     for pooling in "len_pool" "attn_pool"; do
         for val_idx in $(seq 0 0); do
-            for lr in 5e-5 1e-4 5e-4 1e-3; do
+            for lr in 5e-5; do
+            # for lr in 5e-5 1e-4 5e-4 1e-3; do
                 echo "Waiting for available GPU for dataset: $dataset_name"
                 
                 # Wait for available GPU

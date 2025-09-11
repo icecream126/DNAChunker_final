@@ -2,7 +2,7 @@
 defaults:
   - /trainer: default
   - /loader: default
-  - /dataset: nucleotide_transformer
+  - /dataset: nucleotide_transformer2
   - /task: multiclass_classification
   - /optimizer: adamw
   - /scheduler: plateau
