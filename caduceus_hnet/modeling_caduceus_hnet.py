@@ -778,7 +778,6 @@ class CaduceusMixerModel(nn.Module):
         # Set boundaries after end of mask regions (if not at sequence end)
         valid_end_mask = (last_mask_pos >= 0) & (last_mask_pos < seq_len - 1)
         boundaries[valid_end_mask, last_mask_pos[valid_end_mask] + 1] = 1
-        import pdb; pdb.set_trace()
         return boundaries
         
     def forward(self, input_ids, inputs_embeds=None, output_hidden_states=False, boundaries=None):
@@ -838,6 +837,7 @@ class CaduceusMixerModel(nn.Module):
             main_hidden_states, main_residual = layer(main_hidden_states, main_residual, inference_params=None)
         
         main_hidden_states = main_hidden_states * pad_mask.unsqueeze(-1)
+        all_hidden_states.append((main_hidden_states, pad_mask))
         z_hat_s = main_hidden_states
 
         # --- FIX: Call the single de-chunking and upsampling module ---
