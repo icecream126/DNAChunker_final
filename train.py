@@ -569,13 +569,17 @@ class SequenceLightningModule(pl.LightningModule):
         return eval_loader_names, eval_loaders
 
     def val_dataloader(self):
-        val_loader_names, val_loaders = self._eval_dataloaders()
+        # Only return validation loaders, not test
+        val_loaders = self.dataset.val_dataloader(**self.hparams.loader)
+        val_loader_names, val_loaders = self._eval_dataloaders_names(val_loaders, "val")
         self.val_loader_names = val_loader_names
         return val_loaders
 
     def test_dataloader(self):
-        test_loader_names, test_loaders = self._eval_dataloaders()
-        self.test_loader_names = ["final/" + name for name in test_loader_names]
+        # Only return test loaders, not validation
+        test_loaders = self.dataset.test_dataloader(**self.hparams.loader)
+        test_loader_names, test_loaders = self._eval_dataloaders_names(test_loaders, "test")
+        self.test_loader_names = test_loader_names
         return test_loaders
 
 
@@ -681,9 +685,11 @@ def train(config):
             config.train.update({"remove_test_loader_in_eval": False})
             ckpt = torch.load(best_val_ckpt)
             log.info(f"Loaded best validation checkpoint from epoch {ckpt['epoch']}")
-            trainer.validate(model, ckpt_path=best_val_ckpt)
+            trainer.test(model, ckpt_path=best_val_ckpt)
         else:
+            # Run validation first, then test separately
             trainer.validate(model)
+            trainer.test(model)
 
 
 @hydra.main(config_path="configs", config_name="config.yaml", version_base=None)

@@ -6,16 +6,18 @@ defaults:
   - /task: multiclass_classification
   - /optimizer: adamw
   - /scheduler: plateau
-  - /callbacks: [base, checkpoint]
+  - /callbacks: [base, checkpoint, early_stopping]
 
 task:
   loss:
     _name_: cross_entropy
   metrics:
     - ${dataset.metric}
+  torchmetrics:
+    - proper_mcc  # Use proper MCC that accumulates across batches
 
 train:
-  monitor: val/${dataset.metric}
+  monitor: val/proper_mcc  # Monitor proper MCC instead of batch-wise MCC
   mode: max
 
 encoder: id

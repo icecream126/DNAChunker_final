@@ -364,11 +364,15 @@ class NucleotideTransformer(HG38):
 
         if self.tokenizer_name == "char":
             print("**Using Char-level tokenizer**")
-            self.tokenizer = CharacterTokenizer(
-                characters=["A", "C", "G", "T", "N"],
-                model_max_length=self.max_length + 2,  # add 2 since default adds eos/eos tokens, crop later
-                add_special_tokens=False,
-                padding_side=self.padding_side,
+            # self.tokenizer = CharacterTokenizer(
+            #     characters=["A", "C", "G", "T", "N"],
+            #     model_max_length=self.max_length + 2,  # add 2 since default adds eos/eos tokens, crop later
+            #     add_special_tokens=False,
+            #     padding_side=self.padding_side,
+            # )
+            self.tokenizer = CaduceusTokenizer(
+                model_max_length=self.max_length,
+                add_special_tokens=False
             )
 
         # Create all splits: torch datasets (only train/test in this benchmark)

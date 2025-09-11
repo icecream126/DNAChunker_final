@@ -656,6 +656,7 @@ class HNetMixerModel(nn.Module):
             print("Main hidden states is nan")
             import pdb; pdb.set_trace()
         z_hat_s = main_hidden_states
+        all_hidden_states.append((z_hat_s, attention_mask))
 
         # 4. Dechunking with Cross-Attention
         max_chunks = z_hat_s.shape[1]
@@ -693,12 +694,12 @@ class HNetMixerModel(nn.Module):
         if output_hidden_states:
             all_hidden_states.append(hidden_states)
 
-        if ratio_loss.isnan().any():
-            print("Ratio loss is nan")
-            import pdb; pdb.set_trace()
-        if hidden_states.isnan().any():
-            print("Hidden states is nan")
-            import pdb; pdb.set_trace(1)
+        # if ratio_loss.isnan().any():
+        #     print("Ratio loss is nan")
+        #     import pdb; pdb.set_trace()
+        # if hidden_states.isnan().any():
+        #     print("Hidden states is nan")
+        #     import pdb; pdb.set_trace(1)
         return hidden_states, all_hidden_states, ratio_loss
 
 

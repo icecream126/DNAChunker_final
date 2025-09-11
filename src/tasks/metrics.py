@@ -80,6 +80,44 @@ class RecallPerClass(CorrectAggregatedMetric):
         return numerator, denominator
 
 
+class ProperMCC(Metric):
+    """Properly aggregated MCC that accumulates predictions and labels across batches.
+    
+    This fixes the issue where MCC was being averaged across batches, which is mathematically incorrect.
+    MCC should be computed once on the complete dataset.
+    """
+    def __init__(self, dist_sync_on_step=False):
+        super().__init__(dist_sync_on_step=dist_sync_on_step)
+        self.add_state("predictions", default=[], dist_reduce_fx="cat")
+        self.add_state("targets", default=[], dist_reduce_fx="cat")
+    
+    def update(self, logits: torch.Tensor, y: torch.Tensor):
+        """Update metric states with new predictions and targets."""
+        logits = logits.view(-1, logits.shape[-1])
+        y = y.view(-1)
+        y_hat = torch.argmax(logits, dim=-1)
+        
+        self.predictions.append(y_hat.cpu())
+        self.targets.append(y.cpu())
+    
+    def compute(self):
+        """Compute MCC on all accumulated predictions and targets."""
+        if len(self.predictions) == 0:
+            return torch.tensor(0.0)
+        
+        # Concatenate all predictions and targets
+        all_predictions = torch.cat(self.predictions, dim=0)
+        all_targets = torch.cat(self.targets, dim=0)
+        
+        # Compute MCC on the complete dataset
+        return torch.tensor(matthews_corrcoef(all_targets.detach().cpu().numpy(), all_predictions.detach().cpu().numpy()))
+    
+    def reset(self):
+        """Reset metric states."""
+        self.predictions = []
+        self.targets = []
+
+
 def mcc(logits, y):
     logits = logits.view(-1, logits.shape[-1])
     y = y.view(-1)
@@ -186,7 +224,7 @@ def cross_entropy(logits, y, ignore_index=-100):
     ce = F.cross_entropy(logits, y, ignore_index=ignore_index)
     if ce.isnan().any():
         print("CE is nan")
-        import pdb; pdb.set_trace()
+        ce = ce.nan_to_num(0.0)
     return ce.mean()
 
 

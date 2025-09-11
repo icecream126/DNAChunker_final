@@ -3,4 +3,5 @@ _name_: multiclass
 loss: cross_entropy
 metrics:
   - accuracy
-torchmetrics: null
+torchmetrics:
+  - proper_mcc  # Use proper MCC that accumulates across batches

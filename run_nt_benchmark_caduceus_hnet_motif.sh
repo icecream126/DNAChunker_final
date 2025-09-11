@@ -2,20 +2,25 @@
 
 # Set of dataset names to iterate through
 DATASET_NAMES=(
+    "enhancers"
+    "enhancers_types"
+    # "H3"
+    # "H3K4me1"
+    # "H3K4me2"
+    # "H3K4me3"
+    # "H3K9ac"
+    # "H3K14ac"
+    # "H3K36me3"
+    # "H3K79me3"
+    # "H4"
+    # "H4ac"
     "promoter_all"
     "promoter_no_tata"
     "promoter_tata"
-    "enhancers"
-    "enhancers_types"
-    "H3"
-    "H3K4me1"
-    "H3K4me2"
-    # "H3K4me3"
-    # "H3K9ac"
     # "splice_sites_acceptors"
+    "splice_sites_all"
     # "splice_sites_donors"
 )
-
 # Parse command line arguments for GPU IDs
 AVAILABLE_GPUS=()
 if [ $# -eq 0 ]; then
@@ -35,12 +40,18 @@ find_available_gpu() {
     # Check each specified GPU for availability
     for gpu_id in "${AVAILABLE_GPUS[@]}"; do
         if [ -z "${gpu_assignments[$gpu_id]}" ]; then
-            # Check if GPU memory usage is below threshold
-            memory_info=$(nvidia-smi --query-gpu=index,memory.used,memory.total --format=csv,noheader,nounits | grep "^$gpu_id,")
-            if [ -n "$memory_info" ]; then
-                memory_used=$(echo "$memory_info" | awk -F', ' '{print $2}')
-                memory_total=$(echo "$memory_info" | awk -F', ' '{print $3}')
-                if [ "$memory_used" -lt "$((memory_total * 80 / 100))" ]; then
+            # Check GPU memory usage only
+            gpu_info=$(nvidia-smi --query-gpu=index,memory.used,memory.total --format=csv,noheader,nounits | grep "^$gpu_id,")
+            
+            if [ -n "$gpu_info" ]; then
+                memory_used=$(echo "$gpu_info" | awk -F', ' '{print $2}')
+                memory_total=$(echo "$gpu_info" | awk -F', ' '{print $3}')
+                
+                # Calculate 15% memory threshold (more generous for system overhead)
+                memory_threshold=$(awk "BEGIN {printf \"%.0f\", $memory_total * 0.4}")
+                
+                # Check if GPU is available (low memory usage only)
+                if [ "$memory_used" -lt "$memory_threshold" ]; then
                     echo $gpu_id
                     return 0
                 fi
@@ -57,30 +68,37 @@ run_training() {
     local dataset_name=$1
     local gpu_id=$2
     local val_idx=$3
-    
+    local lr=$4
+    local pooling=$5
     echo "Starting training for dataset: $dataset_name on GPU: $gpu_id"
     
     # Set CUDA device
     export CUDA_VISIBLE_DEVICES=$gpu_id
     
+    CFG_PATH="/workspace/caduceus_proj/outputs/pretrain/hg38_masked/hnet_MLM_seqlen-k_d_model-1024_n_enc_layer-2_n_main_layer-8_n_dec_layer-2_lr-1e-4_tokenizer_type-default/model_config.json"
+    CKPT_PATH="/workspace/caduceus_proj/outputs/pretrain/hg38_masked/hnet_MLM_seqlen-k_d_model-1024_n_enc_layer-2_n_main_layer-8_n_dec_layer-2_lr-1e-4_tokenizer_type-default/checkpoints/test/loss.ckpt"
     # Run the training command
     python -m train \
         experiment=hg38/nucleotide_transformer \
-        callbacks.model_checkpoint_every_n_steps.every_n_train_steps=5000 \
+        callbacks.model_checkpoint_every_n_steps.every_n_train_steps=100 \
+        trainer.val_check_interval=20 \
         dataset.train_val_split_seed=$val_idx \
-        dataset.batch_size=32 \
+        dataset.batch_size=64 \
         dataset.rc_aug=false \
         +dataset.conjoin_test=false \
         model._name_=dna_embedding_hnet \
-        +model.config_path=/workspace/caduceus_proj/outputs/pretrain/hg38/hnet_seqlen-k_d_model-1024_n_enc_layer-2_n_main_layer-8_n_dec_layer-2_lr-5e-4_tokenizer_type-default/model_config.json \
+        +model.config_path=${CFG_PATH} \
         +model.conjoin_test=false \
         +decoder.conjoin_train=false \
         +decoder.conjoin_test=false \
-        optimizer.lr=1e-5 \
-        train.pretrained_model_path=/workspace/caduceus_proj/outputs/pretrain/hg38/hnet_seqlen-k_d_model-1024_n_enc_layer-2_n_main_layer-8_n_dec_layer-2_lr-5e-4_tokenizer_type-default/checkpoints/last.ckpt \
-        trainer.max_epochs=10 \
-        wandb.name=hnet_motif_${dataset_name}_attn_pool_val_${val_idx} \
+        optimizer.lr=${lr} \
+        train.pretrained_model_path=${CKPT_PATH} \
+        trainer.max_epochs=20 \
         dataset.dataset_name=$dataset_name \
+        train.monitor=val/proper_mcc \
+        wandb.name=FREEZE_ENC_Proper_MCC_HNET_MLM_${pooling}_${dataset_name}_val_idx-${val_idx}_lr-${lr} \
+        decoder.mode=${pooling} \
+        trainer.precision=16 \
         model=hnet 
     echo "Completed training for dataset: $dataset_name on GPU: $gpu_id"
 }
@@ -108,32 +126,36 @@ manage_gpus() {
 
 # Run training for each dataset
 for dataset_name in "${DATASET_NAMES[@]}"; do
-    for val_idx in $(seq 0 0); do
-        echo "Waiting for available GPU for dataset: $dataset_name"
-        
-        # Wait for available GPU
-        while true; do
-            manage_gpus
-            
-            # Find available GPU
-            available_gpu=$(find_available_gpu)
-            
-            if [ -n "$available_gpu" ] && [ -z "${gpu_assignments[$available_gpu]}" ]; then
-                echo "Found available GPU: $available_gpu for dataset: $dataset_name"
+    for pooling in "len_pool" "attn_pool"; do
+        for val_idx in $(seq 0 0); do
+            for lr in 5e-5 1e-4 5e-4 1e-3; do
+                echo "Waiting for available GPU for dataset: $dataset_name"
                 
-                # Assign GPU and start training
-                gpu_assignments[$available_gpu]=$dataset_name
-                
-                # Run training in background
-                run_training "$dataset_name" "$available_gpu" "$val_idx" &
-                running_processes[$available_gpu]=$!
-                
-                echo "Started training for $dataset_name on GPU $available_gpu (PID: ${running_processes[$available_gpu]})"
-                break
-            fi
-            
-            echo "No GPU available, waiting..."
-            sleep 10
+                # Wait for available GPU
+                while true; do
+                    manage_gpus
+                    
+                    # Find available GPU
+                    available_gpu=$(find_available_gpu)
+                    
+                    if [ -n "$available_gpu" ] && [ -z "${gpu_assignments[$available_gpu]}" ]; then
+                        echo "Found available GPU: $available_gpu for dataset: $dataset_name"
+                        
+                        # Assign GPU and start training
+                        gpu_assignments[$available_gpu]=$dataset_name
+                        
+                        # Run training in background
+                        run_training "$dataset_name" "$available_gpu" "$val_idx" "$lr" "$pooling" &
+                        running_processes[$available_gpu]=$!
+                        
+                        echo "Started training for $dataset_name on GPU $available_gpu (PID: ${running_processes[$available_gpu]})"
+                        break
+                    fi
+                    
+                    echo "No GPU available, waiting..."
+                    sleep 10
+                done
+            done
         done
     done
 done

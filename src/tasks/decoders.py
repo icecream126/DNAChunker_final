@@ -36,6 +36,95 @@ class Decoder(nn.Module):
         """
         return self.forward(x.unsqueeze(1)).squeeze(1)
 
+class AttentionPooling(nn.Module):
+    """
+    A simple Attention Pooling module for aggregating sequence representations.
+    
+    This module uses a single learnable query vector to perform attention over
+    the input sequence and produce a pooled representation. This is commonly
+    used for tasks like text classification where a single vector is needed
+    to represent the entire sequence.
+    """
+    def __init__(self, d_model, num_heads=4, dropout=0.1, d_output=1):
+        """
+        Initializes the Attention Pooling module.
+
+        Args:
+            d_model (int): The dimension of the input and output representations.
+            num_heads (int): The number of attention heads.
+            dropout (float): The dropout probability for the attention weights.
+        """
+        super().__init__()
+        
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.dropout = dropout
+
+        # The core of attention pooling: a single, learnable query token.
+        # This token is a nn.Parameter that will be optimized during training
+        # to learn how to best query the input sequence.
+        self.query_token = nn.Parameter(torch.randn(1, 1, d_model))
+        
+        # Multi-Head Attention layer. The query comes from our learnable token,
+        # while the key and value are the input sequence itself.
+        self.attention = nn.MultiheadAttention(
+            embed_dim=d_model,
+            num_heads=min(num_heads, d_model // 64),  # Prevents num_heads from exceeding d_model
+            dropout=dropout,
+            batch_first=True
+        )
+        
+        # Layer Normalization for stabilizing training
+        self.norm = nn.LayerNorm(d_model)
+        self.linear = nn.Linear(d_model, d_output)
+
+    def forward(self, x, attn_mask=None):
+        """
+        Performs attention pooling on the input sequence.
+
+        Args:
+            x (torch.Tensor): The input sequence tensor of shape (batch_size, seq_len, d_model).
+            attn_mask (torch.Tensor, optional): A boolean mask of shape (batch_size, seq_len)
+                                                where `True` indicates padding locations.
+                                                Used to prevent attention to padded tokens.
+
+        Returns:
+            torch.Tensor: The pooled representation of shape (batch_size, d_model).
+        """
+        batch_size, seq_len, d_model = x.shape
+        
+        # Expand the single learnable query token to match the batch size.
+        # The query's shape becomes (batch_size, 1, d_model).
+        query = self.query_token.expand(batch_size, -1, -1)
+
+        if attn_mask is None:
+            attn_mask = torch.all(x == 0, dim=-1).squeeze()
+        
+        # Apply the attention mechanism.
+        # query: The learnable query for aggregation.
+        # key: The input sequence x.
+        # value: The input sequence x.
+        # key_padding_mask: Ensures we don't attend to padded tokens.
+        # print(f"ATTN shape: {attn_mask.shape}")
+        # print(f"QUERY shape: {query.shape}")
+        # print(f"X shape: {x.shape}")
+        # print(f"VALUE shape: {x.shape}")
+        # import pdb; pdb.set_trace()
+        attn_output, _ = self.attention(
+            query=query,
+            key=x,
+            value=x,
+            key_padding_mask=attn_mask
+        )
+        
+        # The attention output has shape (batch_size, 1, d_model).
+        # We squeeze the sequence dimension and apply layer normalization.
+        output = self.norm(attn_output.squeeze(1))
+        output = self.linear(output)
+        
+        return output
+
+
 class AttnPool(nn.Module):
     """Attention pooling layer for sequence aggregation that respects valid sequence lengths."""
     
@@ -59,10 +148,10 @@ class AttnPool(nn.Module):
 
         self.linear = nn.Linear(d_model, d_output)
     
-    def forward(self, x, lengths=None):
+    def forward(self, x, attn_mask=None):
         """
         x: (batch, seq_len, d_model)
-        lengths: (batch,) - actual sequence lengths (optional)
+        attn_mask: (batch, seq_len) - True for padding locations, False for valid tokens
         Returns: (batch, d_model) - pooled representation
         """
         if self.attention is None:
@@ -78,22 +167,19 @@ class AttnPool(nn.Module):
         
         batch_size, seq_len, d_model = x.shape
         
-        # Create attention mask for valid tokens
-        if lengths is not None:
-            # Create mask: True for valid tokens, False for padding
-            mask = torch.arange(seq_len, device=x.device).expand(batch_size, seq_len) < lengths.unsqueeze(1)
-            # Convert to attention mask format (True = ignore, False = attend)
-            attn_mask = ~mask
-        else:
-            attn_mask = None
-        
         # Create a learnable query for attention pooling
-        if lengths is not None:
-            # Use mean of valid tokens only
-            query = torch.zeros(batch_size, 1, d_model, device=x.device)
-            for i, length in enumerate(lengths):
-                if length > 0:
-                    query[i, 0] = x[i, :length].mean(dim=0)
+        if attn_mask is not None:
+            # Use mean of valid tokens only (where attn_mask is False)
+            valid_mask = ~attn_mask  # (batch, seq_len) - True for valid tokens
+            valid_counts = valid_mask.sum(dim=1, keepdim=True).float()  # (batch, 1)
+            
+            # Mask out padding tokens and sum
+            masked_x = x * valid_mask.unsqueeze(-1)  # (batch, seq_len, d_model)
+            sum_valid = masked_x.sum(dim=1, keepdim=True)  # (batch, 1, d_model)
+            
+            # Avoid division by zero - use at least 1 for count
+            valid_counts = torch.clamp(valid_counts, min=1.0)
+            query = sum_valid / valid_counts.unsqueeze(-1)  # (batch, 1, d_model)
         else:
             # Use mean of all tokens
             query = torch.mean(x, dim=1, keepdim=True)  # (batch, 1, d_model)
@@ -137,7 +223,7 @@ class SequenceDecoder(Decoder):
             assert not use_lengths
 
         if mode == 'attn_pool':
-            self.output_transform = AttnPool(d_model=d_model, d_output=d_output)
+            self.output_transform = AttentionPooling(d_model=d_model, d_output=d_output)
         else:
             self.output_transform = nn.Identity() if d_output is None else nn.Linear(d_model, d_output)
 
@@ -195,6 +281,8 @@ class SequenceDecoder(Decoder):
                 """Ragged aggregation."""
                 # remove any additional padding (beyond max length of any sequence in the batch)
                 return x_seq
+        elif self.mode == "len_pool":
+            restrict = None
         elif self.mode == 'ragged':
             assert lengths is not None, "lengths must be provided for ragged mode"
 
@@ -218,6 +306,17 @@ class SequenceDecoder(Decoder):
                 ],
                 dim=0,
             )
+        elif self.mode == 'len_pool':
+            attn_mask = ~torch.all(x == 0, dim=-1)  # (b, n) - True for valid tokens
+            val_len = attn_mask.sum(dim=-1, keepdim=True).float()  # (b, 1)
+
+            # Mask out zero locations and sum
+            masked_x = x * attn_mask.unsqueeze(-1)  # (b, n, d)
+            tot_sum = masked_x.sum(dim=1, keepdim=True)  # (b, 1, d)
+
+            # Avoid division by zero
+            val_len = torch.clamp(val_len, min=1.0)
+            x = tot_sum / val_len.unsqueeze(-1)  # (b, 1, d)
         else:
             x = restrict(x)
         if squeeze and self.mode != 'attn_pool':
@@ -232,11 +331,7 @@ class SequenceDecoder(Decoder):
             x_rc = self.output_transform(x_rc.squeeze())
             x = (x + x_rc) / 2
         elif self.mode == 'attn_pool':
-            if lengths is not None:
-                attn_mask = torch.arange(x.size(1), device=x.device) < lengths.unsqueeze(1)
-                x = self.output_transform(x.squeeze(), attn_mask=attn_mask)
-            else:
-                x = self.output_transform(x.squeeze())
+            x = self.output_transform(x.squeeze())
         else:
             x = self.output_transform(x)
 

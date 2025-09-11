@@ -9,6 +9,7 @@ import torch
 from torch import Tensor
 
 from torchmetrics import Metric
+from src.tasks.metrics import ProperMCC
 
 try:
     from flash_attn.losses.cross_entropy import CrossEntropyLoss
@@ -117,4 +118,5 @@ class NumTokens(Metric):
 torchmetric_fns = {
     "perplexity": Perplexity,
     "num_tokens": NumTokens,
+    "proper_mcc": ProperMCC,
 }
