@@ -658,6 +658,10 @@ class HNetMixerModel(nn.Module):
             hidden_states = inputs_embeds
         else:
             hidden_states = self.embeddings(input_ids)
+        
+        # Print original sequence length
+        seq_len = input_ids.shape[1] if input_ids is not None else hidden_states.shape[1]
+        print(f"Original sequence length: {seq_len}")
 
         residual = None
         
@@ -677,6 +681,11 @@ class HNetMixerModel(nn.Module):
         b_stage1 = (b_stage1.bool() | special_token_boundaries.bool()).float()
         
         x_s1, chunk_lengths_s1 = self.downsampler(x_hat_enc1, b_stage1)
+        
+        # # Print average number of chunks after first chunking
+        # avg_chunks_s1 = chunk_lengths_s1.float().mean().item()
+        # compression_ratio_s1 = seq_len / avg_chunks_s1 if avg_chunks_s1 > 0 else 0
+        # print(f"Stage 1 Chunking - Average chunks per batch: {avg_chunks_s1:.2f} (compression ratio: {compression_ratio_s1:.2f})")
 
         # === STAGE 2: Encoder2 + Second Chunking ===
         # 3. Encoder Stage 2 (on coarse chunks)
@@ -688,6 +697,12 @@ class HNetMixerModel(nn.Module):
         # 4. Second Chunking (Fine)
         p_stage2, b_stage2 = self.routing_module_stage2(x_hat_enc2)
         x_s2, chunk_lengths_s2 = self.downsampler(x_hat_enc2, b_stage2)
+        
+        # # Print average number of chunks after second chunking
+        # avg_chunks_s2 = chunk_lengths_s2.float().mean().item()
+        # compression_ratio_s2 = avg_chunks_s1 / avg_chunks_s2 if avg_chunks_s2 > 0 else 0
+        # total_compression_ratio = seq_len / avg_chunks_s2 if avg_chunks_s2 > 0 else 0
+        # print(f"Stage 2 Chunking - Average chunks per batch: {avg_chunks_s2:.2f} (compression ratio: {compression_ratio_s2:.2f}, total: {total_compression_ratio:.2f})")
 
         # === MAIN MODEL: Process finest chunks ===
         # 5. Main Network (Transformer) - processes finest chunks
