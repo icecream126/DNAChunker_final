@@ -1,0 +1,28 @@
+# @package _global_
+defaults:
+  - /trainer: default
+  - /loader: default
+  - /dataset: nucleotide_transformer2
+  - /task: multiclass_classification
+  - /optimizer: adamw
+  - /scheduler: plateau
+  - /callbacks: [base, checkpoint]
+
+task:
+  loss:
+    _name_: cross_entropy
+  metrics:
+    - ${dataset.metric}
+  torchmetrics:
+    - proper_mcc  # Use proper MCC that accumulates across batches
+
+train:
+  monitor: val/proper_mcc  # Monitor proper MCC instead of batch-wise MCC
+  mode: max
+
+encoder: id
+
+# we need this for classification!
+decoder:
+  _name_: sequence
+  mode: attn_pool

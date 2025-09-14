@@ -34,7 +34,7 @@ class HNetConfig(PretrainedConfig):
             bidirectional_weight_tie: bool = True,
             target_ratio: float = 0.3,  # Legacy parameter for backward compatibility
             target_ratio_stage1: float = 0.5,  # Coarse chunking ratio
-            target_ratio_stage2: float = 0.3,  # Fine chunking ratio
+            target_ratio_stage2: float = 0.3,  # Super-coarse chunking ratio
             motif_ratio: float = 0.0,
             
             # Layer configuration

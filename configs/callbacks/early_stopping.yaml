@@ -1,6 +1,6 @@
 early_stopping:
   monitor: ${train.monitor}
   mode: ${train.mode}
-  patience: 5
+  patience: 100
   min_delta: 0.001
   verbose: true

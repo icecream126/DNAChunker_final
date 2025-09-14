@@ -24,8 +24,8 @@ from caduceus_hnet.configuration_caduceus_hnet import CaduceusHNetConfig
 from caduceus_hnet.modeling_caduceus_hnet import CaduceusHNet
 from src.models.sequence.long_conv_lm import LMBackbone
 from src.models.sequence.long_conv_lm import _init_weights
-from hnet.configuration_hnet import HNetConfig
-from hnet.modeling_hnet import HNetTransformer as HNet
+from hnet_mlm.configuration_hnet import HNetConfig
+from hnet_mlm.modeling_hnet import HNetTransformer as HNet
 
 
 class DNAEmbeddingModel(nn.Module, GenerationMixin):
