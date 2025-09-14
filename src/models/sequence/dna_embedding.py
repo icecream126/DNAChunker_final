@@ -219,21 +219,22 @@ class DNAEmbeddingModelCaduceusHNet(DNAEmbeddingModel):
             config=config,
             **factory_kwargs,
         )
-        # for layer in self.caduceus.backbone.layers[:self.caduceus.n_enc_layer]:
+        # for layer in self.caduceus.backbone.layers[:self.caduceus.backbone.n_enc_layer]:
         #     for param in layer.parameters():
         #         param.requires_grad = False
-        for param in self.caduceus.backbone.routing_module.parameters():
-            param.requires_grad = False
+        # for param in self.caduceus.backbone.routing_module.parameters():
+        #     param.requires_grad = False
 
         self.conjoin_train = conjoin_train
         self.conjoin_test = conjoin_test
 
     def forward(self, input_ids, position_ids=None, inference_params=None, state=None):  # state for the repo interface
         """Caduceus-HNet backbone-specific forward pass that does not use `position_ids`."""
-        out = self.caduceus(input_ids, return_dict=True, output_hidden_states=True)
-        hid_states, attn_mask =  out['hidden_states'][1]
-        hid_states = hid_states * (attn_mask.squeeze().unsqueeze(-1)).float()
-        return hid_states, None
+        out = self.caduceus(input_ids, return_dict=False)
+        # hid_states, attn_mask =  out['hidden_states'][1]
+        # hid_states = hid_states * (attn_mask.squeeze().unsqueeze(-1)).float()
+        # hid_states = self.caduceus(input_ids, return_dict=False)[0]
+        return out[0], None
 
 # class DNAEmbeddingModelCaduceusHNetMotif(DNAEmbeddingModel):
 #     """Custom DNA Embedding Model that is compatible with Caduceus-HNet models."""
@@ -298,21 +299,26 @@ class DNAEmbeddingModelHNet(DNAEmbeddingModel):
         )
 
         # # freeze encoder part
-        for param in self.caduceus.backbone.encoder_layers.parameters():
-            param.requires_grad = False
+        # for param in self.caduceus.backbone.encoder_layers.parameters():
+        #     param.requires_grad = False
         
-        # freeze tokenization part
-        for param in self.caduceus.backbone.routing_module.parameters():
-            param.requires_grad = False
+        # # freeze tokenization part
+        # for param in self.caduceus.backbone.routing_module.parameters():
+        #     param.requires_grad = False
 
         self.conjoin_train = conjoin_train
         self.conjoin_test = conjoin_test
 
     def forward(self, input_ids, position_ids=None, inference_params=None, state=None):  # state for the repo interface
-        out = self.caduceus(input_ids, return_dict=True, output_hidden_states=True)
-        hid_states, attn_mask =  out['hidden_states'][1]
-        hid_states = hid_states * (~attn_mask.squeeze().unsqueeze(-1)).float()
-        return hid_states, None
+        # out = self.caduceus(input_ids, return_dict=True, output_hidden_states=True)
+        # hid_states, attn_mask =  out['hidden_states'][1]
+        # hid_states = hid_states * (~attn_mask.squeeze().unsqueeze(-1)).float()
+        out = self.caduceus(input_ids, return_dict=False)
+        # hid_states, attn_mask =  out['hidden_states'][1]
+        # hid_states = hid_states * (attn_mask.squeeze().unsqueeze(-1)).float()
+        # hid_states = self.caduceus(input_ids, return_dict=False)[0]
+        return out[0], None
+        # return hid_states, None
 
 
 def load_backbone(model, state_dict, freeze_backbone=False, ignore_head=True):
