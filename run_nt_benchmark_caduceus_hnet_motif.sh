@@ -87,8 +87,8 @@ run_training() {
     
     HYDRA_RUN_DIR="./outputs/downstream/nt/${TASK}/caduceus_hnet/seed-${val_idx}"
     mkdir -p "${HYDRA_RUN_DIR}"
-    CFG_PATH="/workspace/outputs/caduceus-hnet_seqlen-k_d_model-256_n_enc_layer-2_n_main_layer-8_n_dec_layer-2_lr-8e-3_tokenizer_type-default/model_config.json"
-    CKPT_PATH="/workspace/outputs/caduceus-hnet_seqlen-k_d_model-256_n_enc_layer-2_n_main_layer-8_n_dec_layer-2_lr-8e-3_tokenizer_type-default/checkpoints/test/loss.ckpt"
+    CFG_PATH="/workspace/outputs_inocras/pretrain/hg38/caduceus-hnet_seqlen-k_d_model-256_n_enc_layer-2_n_main_layer-8_n_dec_layer-2_lr-8e-3_tokenizer_type-default/model_config.json"
+    CKPT_PATH="/workspace/outputs_inocras/pretrain/hg38/caduceus-hnet_seqlen-k_d_model-256_n_enc_layer-2_n_main_layer-8_n_dec_layer-2_lr-8e-3_tokenizer_type-default/checkpoints/test/loss.ckpt"
     
     # CFG_PATH="/workspace/outputs/caduceus-hnet_seqlen-k_d_model-256_n_enc_layer-2_n_main_layer-8_n_dec_layer-2_lr-8e-3_tokenizer_type-default-motif/model_config.json"
     # CKPT_PATH="/workspace/outputs/caduceus-hnet_seqlen-k_d_model-256_n_enc_layer-2_n_main_layer-8_n_dec_layer-2_lr-8e-3_tokenizer_type-default-motif/checkpoints/test/loss.ckpt"
@@ -111,7 +111,7 @@ run_training() {
         trainer.max_epochs=20 \
         dataset.dataset_name=$dataset_name \
         train.monitor=val/proper_mcc \
-        wandb.name=FINAL_CADUCEUS_HNET_${pooling}_${dataset_name}_val_idx-${val_idx}_lr-${lr} \
+        wandb.name=FINAL_ALLTRAIN_CADUCEUS_HNET_${pooling}_${dataset_name}_val_idx-${val_idx}_lr-${lr} \
         decoder.mode=${pooling} \
         trainer.precision=16 \
         +wandb.tags=\["seed-${seed}"\] \

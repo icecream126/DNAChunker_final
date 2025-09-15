@@ -269,14 +269,17 @@ class GenomicBenchmark(HG38):
         # TODO instantiate with registry
 
         if self.tokenizer_name == "char":
-            print("**Using Char-level tokenizer**")
-            self.tokenizer = CharacterTokenizer(
-                characters=["A", "C", "G", "T", "N"],
-                model_max_length=self.max_length + 2,  # add 2 since default adds eos/eos tokens, crop later
-                add_special_tokens=False,
-                padding_side=self.padding_side,
+            # print("**Using Char-level tokenizer**")
+            # self.tokenizer = CharacterTokenizer(
+            #     characters=["A", "C", "G", "T", "N"],
+            #     model_max_length=self.max_length + 2,  # add 2 since default adds eos/eos tokens, crop later
+            #     add_special_tokens=False,
+            #     padding_side=self.padding_side,
+            # )
+            self.tokenizer = CaduceusTokenizer(
+                model_max_length=self.max_length,
+                add_special_tokens=False
             )
-        import pdb; pdb.set_trace()
         # Create all splits: torch datasets (only train/test in this benchmark, val created below)
         self.dataset_train, self.dataset_test = [
             GenomicBenchmarkDataset(

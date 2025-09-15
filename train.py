@@ -678,14 +678,22 @@ def train(config):
                 model.hparams.callbacks.model_checkpoint.dirpath,
                 f"{model.hparams.callbacks.model_checkpoint.filename}.ckpt",
             )
-            # Update config so we do not load just the backbone
-            config.train.pretrained_model_state_hook.update({"_name_": None})
-            # Remove validation loader
-            config.train.update({"remove_val_loader_in_eval": True})
-            config.train.update({"remove_test_loader_in_eval": False})
-            ckpt = torch.load(best_val_ckpt)
-            log.info(f"Loaded best validation checkpoint from epoch {ckpt['epoch']}")
-            trainer.test(model, ckpt_path=best_val_ckpt)
+            
+            # Check if the validation checkpoint exists
+            if os.path.exists(best_val_ckpt):
+                # Update config so we do not load just the backbone
+                config.train.pretrained_model_state_hook.update({"_name_": None})
+                # Remove validation loader
+                config.train.update({"remove_val_loader_in_eval": True})
+                config.train.update({"remove_test_loader_in_eval": False})
+                ckpt = torch.load(best_val_ckpt)
+                log.info(f"Loaded best validation checkpoint from epoch {ckpt['epoch']}")
+                trainer.test(model, ckpt_path=best_val_ckpt)
+            else:
+                log.warning(f"Validation checkpoint not found at {best_val_ckpt}. Running test without loading checkpoint.")
+                # Run validation first, then test separately
+                trainer.validate(model)
+                trainer.test(model)
         else:
             # Run validation first, then test separately
             trainer.validate(model)

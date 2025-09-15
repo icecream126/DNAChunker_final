@@ -67,7 +67,7 @@ class GenomicBenchmarkDataset(torch.utils.data.Dataset):
         self.all_labels = []
         label_mapper = {}
 
-        for i, x in enumerate(base_path.iterdir()):
+        for i, x in enumerate(sorted(base_path.iterdir())):
             label_mapper[x.stem] = i
 
         for label_type in label_mapper.keys():
@@ -97,9 +97,9 @@ class GenomicBenchmarkDataset(torch.utils.data.Dataset):
         seq_ids = seq["input_ids"]  # get input_ids
 
         # need to handle eos here
-        if self.add_eos:
-            # append list seems to be faster than append tensor
-            seq_ids.append(self.tokenizer.sep_token_id)
+        # if self.add_eos:
+        # append list seems to be faster than append tensor
+        seq_ids.append(self.tokenizer.sep_token_id)
 
         if self.conjoin_train or (self.conjoin_test and self.split != "train"):
             x_rc = string_reverse_complement(x)
