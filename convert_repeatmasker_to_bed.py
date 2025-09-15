@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Convert RepeatMasker .out file to BED format."""
 
+# wget https://hgdownload.gi.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.out.gz
+# python convert_repeatmasker_to_bed.py /workspace/caduceus_proj/data/hg38/hg38.fa.out.gz /workspace/caduceus_proj/data/hg38/hg38_repeats.bed
+
+
 import pandas as pd
 import argparse
 import gzip
