@@ -186,6 +186,9 @@ class LMTask(BaseTask):
         if "boundaries" in inspect.signature(model.forward).parameters.keys() and "boundaries" in z.keys():
             model_kwargs["boundaries"] = z["boundaries"]
         
+        # Remove repeat_weights from model kwargs - they should only go to loss function
+        model_kwargs.pop("repeat_weights", None)
+        
         if "state" in inspect.signature(model.forward).parameters.keys():
             output, state = model(x, **model_kwargs, state=_state)
         else:

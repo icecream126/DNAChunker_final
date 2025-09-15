@@ -12,3 +12,10 @@ num_workers: 4  # For preprocessing only
 shuffle: True
 __train_len: 34021
 __l_max: ${.max_length}
+
+# Repeat region penalization parameters
+repeat_penalty: 0.0  # Set to 0 to disable, >0 to enable repeat penalization
+repeat_bed_file: null  # Path to repeat regions BED file (e.g., hg38_repeats.bed)
+detect_simple_repeats: /workspace/caduceus_proj/data/hg38/hg38_repeats.bed  # Enable simple repeat detection when repeat_bed_file is null
+min_repeat_length: 3  # Minimum repeat pattern length for simple detection
+max_repeat_length: 20  # Maximum repeat pattern length for simple detection

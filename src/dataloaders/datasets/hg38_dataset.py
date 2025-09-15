@@ -7,11 +7,13 @@ from pathlib import Path
 
 import pandas as pd
 import torch
+import numpy as np
 from pyfaidx import Fasta
 import fsspec
 
 from src.dataloaders.utils.mlm import mlm_getitem
 from src.dataloaders.utils.rc import coin_flip, string_reverse_complement
+from src.dataloaders.utils.repeat_regions import RepeatRegionManager, create_repeat_mask_from_sequence
 
 MAX_ALLOWED_LENGTH = 2 ** 20
 _MOTIFS_CACHE = None
@@ -110,10 +112,25 @@ class HG38Dataset(torch.utils.data.Dataset):
             rc_aug=False,
             return_augs=False,
             motif_boundaries=False,
+            repeat_penalty=0.0,
+            repeat_bed_file=None,
+            detect_simple_repeats=True,
+            min_repeat_length=3,
+            max_repeat_length=20,
     ):
         self.mlm = mlm
         self.mlm_probability = mlm_probability
         self.motif_boundaries = motif_boundaries
+        self.repeat_penalty = repeat_penalty
+        self.detect_simple_repeats = detect_simple_repeats
+        self.min_repeat_length = min_repeat_length
+        self.max_repeat_length = max_repeat_length
+        
+        # Initialize repeat region manager only if repeat_penalty > 0
+        if repeat_penalty > 0:
+            self.repeat_manager = RepeatRegionManager(repeat_bed_file) if repeat_bed_file else None
+        else:
+            self.repeat_manager = None
         
         # Use global cache to avoid multiple file opens
         global _MOTIFS_CACHE
@@ -188,6 +205,22 @@ class HG38Dataset(torch.utils.data.Dataset):
         )
         if end - start != MAX_ALLOWED_LENGTH:
             print(row, "\nLength: ", end - start)
+        
+        # Get repeat region information only if repeat_penalty > 0
+        repeat_weights = None
+        if self.repeat_penalty > 0:
+            if self.repeat_manager is not None:
+                # Use pre-computed repeat regions from BED file
+                repeat_weights = self.repeat_manager.get_repeat_penalty_weights(
+                    chr_name, start, end, self.repeat_penalty
+                )
+            elif self.detect_simple_repeats:
+                # Detect simple repeats in the sequence
+                repeat_mask = create_repeat_mask_from_sequence(
+                    seq, self.min_repeat_length, self.max_repeat_length
+                )
+                repeat_weights = np.ones(len(seq), dtype=np.float32)
+                repeat_weights[repeat_mask == 1] = self.repeat_penalty
 
         if self.tokenizer_name == "char":
             if self.motif_boundaries:
@@ -241,6 +274,21 @@ class HG38Dataset(torch.utils.data.Dataset):
         # replace N token with a pad token, so we can ignore it in the loss
         seq = self.replace_value(seq, self.tokenizer._vocab_str_to_int["N"], self.tokenizer.pad_token_id)
 
+        # Convert repeat weights to tensor if available
+        if repeat_weights is not None:
+            # Truncate or pad repeat weights to match sequence length
+            if len(repeat_weights) > len(seq):
+                repeat_weights = repeat_weights[:len(seq)]
+            elif len(repeat_weights) < len(seq):
+                # Pad with 1.0 (no penalty) for additional positions
+                padded_weights = np.ones(len(seq), dtype=np.float32)
+                padded_weights[:len(repeat_weights)] = repeat_weights
+                repeat_weights = padded_weights
+            repeat_weights = torch.from_numpy(repeat_weights).float()
+        else:
+            # If repeat_penalty is 0, create uniform weights (no penalty)
+            repeat_weights = torch.ones_like(seq, dtype=torch.float32)
+
         if self.mlm:
             data, target = mlm_getitem(
                 seq,
@@ -254,5 +302,11 @@ class HG38Dataset(torch.utils.data.Dataset):
             data = seq[:-1].clone()
             target = seq[1:].clone()
 
+        # Truncate repeat weights to match data/target length
+        if len(repeat_weights) > len(data):
+            repeat_weights = repeat_weights[:len(data)]
         
-        return data, target, {"boundaries": boundaries}
+        return data, target, {
+            "boundaries": boundaries,
+            "repeat_weights": repeat_weights
+        }

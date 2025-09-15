@@ -661,7 +661,6 @@ class HNetMixerModel(nn.Module):
         
         # Print original sequence length
         seq_len = input_ids.shape[1] if input_ids is not None else hidden_states.shape[1]
-        print(f"Original sequence length: {seq_len}")
 
         residual = None
         
