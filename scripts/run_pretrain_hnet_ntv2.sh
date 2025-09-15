@@ -1,17 +1,15 @@
 export HYDRA_FULL_ERROR=1
 
-NUM_DEVICES=8
+NUM_DEVICES=1
 
 # Run script - MANUALLY SET THESE TWO VALUES
-SEQLEN=2048
+SEQLEN=4096
 BATCH_SIZE=4
-D_MODEL=1024
+# D_MODEL, MAIN_LAYER, and TRANSFORMER_N_HEAD are determined by NTV2 model
 ENC_LAYER=4
-MAIN_LAYER=26
 DEC_LAYER=4
-TRANSFORMER_N_HEAD=16
 LR="5e-4"
-TOKENIZER_TYPE="default"
+TOKENIZER_TYPE="ntv2"
 TARGET_RATIO_STAGE1="0.3"
 TARGET_RATIO_STAGE2="0.3"
 
@@ -72,28 +70,24 @@ echo "  Val check interval: ${VAL_CHECK_INTERVAL}"
 
 SEQLEN_DIS="$(echo "scale=0; ${SEQLEN} / 1000" | bc)k"
 echo "SEQLEN_DIS: ${SEQLEN_DIS}"
-WANDB_NAME="LARGE_hnet_twostage_seqlen-${SEQLEN_DIS}_d_model-${D_MODEL}_n_enc_layer-${ENC_LAYER}_n_main_layer-${MAIN_LAYER}_n_dec_layer-${DEC_LAYER}_lr-${LR}_tokenizer_type-${TOKENIZER_TYPE}"
+WANDB_NAME="LARGE_hnet_ntv2_seqlen-${SEQLEN_DIS}_n_enc_layer-${ENC_LAYER}_n_dec_layer-${DEC_LAYER}_lr-${LR}_tokenizer_type-${TOKENIZER_TYPE}"
 HYDRA_RUN_DIR="./outputs/pretrain/hg38/${WANDB_NAME}"
 
 mkdir -p "${HYDRA_RUN_DIR}"
 python -m train \
-  experiment=hg38/hnet_twostage \
+  experiment=hg38/hnet_ntv2 \
   callbacks.model_checkpoint_every_n_steps.every_n_train_steps=500 \
   dataset.max_length=${SEQLEN} \
   dataset.batch_size=${BATCH_SIZE} \
   dataset.mlm=true \
   dataset.mlm_probability=0.15 \
   +dataset.motif_boundaries=false \
-  model="hnet_twostage" \
-  model.config.d_model=${D_MODEL} \
+  model="hnet_ntv2" \
   model.config.n_enc_layer=${ENC_LAYER} \
-  model.config.n_main_layer=${MAIN_LAYER} \
   model.config.n_dec_layer=${DEC_LAYER} \
-  model.config.n_layer=$(( ENC_LAYER + MAIN_LAYER + DEC_LAYER )) \
   model.config.tokenizer_type=${TOKENIZER_TYPE} \
   model.config.target_ratio_stage1=${TARGET_RATIO_STAGE1} \
   model.config.target_ratio_stage2=${TARGET_RATIO_STAGE2} \
-  +model.config.transformer_n_head=${TRANSFORMER_N_HEAD} \
   optimizer.lr="${LR}" \
   train.global_batch_size=$(( BATCH_SIZE * NUM_DEVICES )) \
   trainer.max_steps=${MAX_STEPS} \

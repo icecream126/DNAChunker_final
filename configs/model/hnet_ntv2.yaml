@@ -1,0 +1,33 @@
+_name_: hnet_ntv2_lm
+config:
+  _target_: hnet_ntv2.configuration_hnet_ntv2.HNetNTV2Config
+  # NTV2 model parameters (matching the pre-trained model)
+  d_model: 1024
+  n_layer: 24
+  vocab_size: 4107  # NTV2 tokenizer vocabulary size
+  n_head: 16
+  intermediate_size: 8192
+  max_position_embeddings: 1024
+  hidden_dropout: 0.1
+  attention_dropout: 0.1
+  layer_norm_eps: 1e-12
+  
+  # HNet-specific parameters
+  n_enc_layer: 2
+  n_main_layer: 24  # Use all 24 NTV2 layers
+  n_dec_layer: 2
+  target_ratio_stage1: 0.3
+  target_ratio_stage2: 0.5
+  tokenizer_type: "ntv2"
+  
+  # Training parameters
+  pad_vocab_size_multiple: 8  # Required to match CaduceusTokenizer padding
+  initializer_cfg:
+    initializer_range: 0.02
+    rescale_prenorm_residual: true
+    n_residuals_per_layer: 1
+  
+  # Caduceus-specific params
+  bidirectional: true
+  bidirectional_strategy: "add"
+  bidirectional_weight_tie: true

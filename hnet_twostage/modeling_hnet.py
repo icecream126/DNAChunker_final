@@ -214,7 +214,7 @@ class CrossAttentionUpsampler(nn.Module):
             attn_mask=attn_mask,  # ← Now using the padding mask!
             dropout_p=0.0, 
             is_causal=False, 
-            scale=None
+            scale=None,
         )
 
         attn_output = attn_output.transpose(1, 2).contiguous().view(B, L_q, D)

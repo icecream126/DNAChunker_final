@@ -234,7 +234,7 @@ def cross_entropy(logits, y, ignore_index=-100, repeat_weights=None):
         ce = F.cross_entropy(logits, y, ignore_index=ignore_index)
     
     if ce.isnan().any():
-        print("CE is nan")
+        raise ValueError("CE is nan")
         ce = ce.nan_to_num(0.0)
     return ce.mean()
 

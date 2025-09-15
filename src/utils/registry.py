@@ -33,6 +33,7 @@ model = {
     "hnet_lm": "hnet.modeling_hnet.HNetTransformerForMaskedLM",
     "hnet_mlm": "hnet_mlm.modeling_hnet.HNetTransformerForMaskedLM",
     "hnet_twostage": "hnet_twostage.modeling_hnet.HNetTransformerForMaskedLM",
+    "hnet_ntv2_lm": "hnet_ntv2.modeling_hnet_ntv2.HNetNTV2ForMaskedLM",
 
     # Downstream task embedding backbones
     "dna_embedding": "src.models.sequence.dna_embedding.DNAEmbeddingModel",
@@ -70,4 +71,5 @@ callbacks = {
 
 model_state_hook = {
     'load_backbone': 'src.models.sequence.dna_embedding.load_backbone',
+    'load_ntv2_weights': 'hnet_ntv2.modeling_hnet_ntv2.load_ntv2_weights',
 }
