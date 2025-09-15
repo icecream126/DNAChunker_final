@@ -780,7 +780,7 @@ class CaduceusMixerModel(nn.Module):
         boundaries[valid_end_mask, last_mask_pos[valid_end_mask] + 1] = 1
         return boundaries
         
-    def forward(self, input_ids, inputs_embeds=None, output_hidden_states=False, boundaries=None):
+    def forward(self, input_ids, inputs_embeds=None, output_hidden_states=False, boundaries=None, ret_boundaries=False):
         all_hidden_states = []
         if inputs_embeds is not None:
             hidden_states = inputs_embeds
@@ -881,6 +881,8 @@ class CaduceusMixerModel(nn.Module):
             )
         if output_hidden_states:
             all_hidden_states.append(hidden_states)
+        if ret_boundaries:
+            return hidden_states, all_hidden_states, ratio_loss + boundary_loss, b_original_dynamic
         return hidden_states, all_hidden_states, ratio_loss + boundary_loss
 
 def cross_entropy(logits, y, ignore_index=-100):

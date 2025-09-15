@@ -163,10 +163,10 @@ manage_gpus() {
 
 # Run training for each dataset
 for dataset_name in "${DATASET_NAMES[@]}"; do
-    for pooling in "len_pool" "attn_pool"; do
-        for seed in $(seq 1 1); do
-            for lr in 1e-4; do
-                for batch_size in 64 128; do
+    for pooling in "pool"; do
+        for seed in $(seq 2 3); do
+            for lr in 1e-4 5e-4 1e-3 5e-3; do
+                for batch_size in 64; do
     # for pooling in "len_pool"; do
     #     for seed in $(seq 1 1); do
     #         for lr in 5e-5; do
