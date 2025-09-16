@@ -1,6 +1,6 @@
 export HYDRA_FULL_ERROR=1
 
-NUM_DEVICES=1
+NUM_DEVICES=4
 
 # Run script - MANUALLY SET THESE TWO VALUES
 SEQLEN=4096
@@ -8,7 +8,7 @@ BATCH_SIZE=4
 # D_MODEL, MAIN_LAYER, and TRANSFORMER_N_HEAD are determined by NTV2 model
 ENC_LAYER=4
 DEC_LAYER=4
-LR="5e-4"
+LR="3e-4"
 TOKENIZER_TYPE="ntv2"
 TARGET_RATIO_STAGE1="0.3"
 TARGET_RATIO_STAGE2="0.3"
@@ -70,7 +70,7 @@ echo "  Val check interval: ${VAL_CHECK_INTERVAL}"
 
 SEQLEN_DIS="$(echo "scale=0; ${SEQLEN} / 1000" | bc)k"
 echo "SEQLEN_DIS: ${SEQLEN_DIS}"
-WANDB_NAME="LARGE_hnet_ntv2_seqlen-${SEQLEN_DIS}_n_enc_layer-${ENC_LAYER}_n_dec_layer-${DEC_LAYER}_lr-${LR}_tokenizer_type-${TOKENIZER_TYPE}"
+WANDB_NAME="LARGE_hnet_ntv2_seqlen-${SEQLEN_DIS}_n_enc_layer-${ENC_LAYER}_n_dec_layer-${DEC_LAYER}_lr-${LR}_tokenizer_name-${TOKENIZER_TYPE}"
 HYDRA_RUN_DIR="./outputs/pretrain/hg38/${WANDB_NAME}"
 
 mkdir -p "${HYDRA_RUN_DIR}"
@@ -82,10 +82,10 @@ python -m train \
   dataset.mlm=true \
   dataset.mlm_probability=0.15 \
   +dataset.motif_boundaries=false \
+  dataset.tokenizer_name=${TOKENIZER_TYPE} \
   model="hnet_ntv2" \
   model.config.n_enc_layer=${ENC_LAYER} \
   model.config.n_dec_layer=${DEC_LAYER} \
-  model.config.tokenizer_type=${TOKENIZER_TYPE} \
   model.config.target_ratio_stage1=${TARGET_RATIO_STAGE1} \
   model.config.target_ratio_stage2=${TARGET_RATIO_STAGE2} \
   optimizer.lr="${LR}" \
@@ -98,7 +98,7 @@ python -m train \
   +trainer.val_check_interval=${VAL_CHECK_INTERVAL} \
   +trainer.strategy._target_=pytorch_lightning.strategies.DDPStrategy \
   +trainer.strategy.find_unused_parameters=true \
-  wandb.group=pretrain_hg38 \
+  wandb.project=dna \
   wandb.name="${WANDB_NAME}" \
   dataset.repeat_penalty=0.1 \
   dataset.repeat_bed_file="/workspace/caduceus_proj/data/hg38/hg38_repeats.bed" \

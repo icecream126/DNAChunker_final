@@ -113,6 +113,13 @@ class HG38(SequenceDataset):
                 model_max_length=self.max_length,
                 add_special_tokens=False
             )
+        elif self.tokenizer_name == "ntv2":
+            from hnet_ntv2.ntv2_tokenizer import NTV2Tokenizer
+            logger.info("**Using NTV2 tokenizer**")
+            self.tokenizer = NTV2Tokenizer(
+                model_max_length=self.max_length,
+                add_special_tokens=False
+            )
         else:
             raise NotImplementedError(f"Tokenizer {self.tokenizer_name} not implemented.")
 

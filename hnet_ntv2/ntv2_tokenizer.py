@@ -86,6 +86,11 @@ class NTV2Tokenizer(PreTrainedTokenizer):
 
     def get_vocab(self) -> Dict[str, int]:
         return self._tokenizer.get_vocab()
+    
+    @property
+    def _vocab_str_to_int(self) -> Dict[str, int]:
+        """Compatibility property for character tokenizer interface."""
+        return self._tokenizer.get_vocab()
 
     def create_token_type_ids_from_sequences(
             self, token_ids_0: List[int], token_ids_1: Optional[List[int]] = None

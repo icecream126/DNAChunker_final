@@ -222,6 +222,7 @@ class HG38Dataset(torch.utils.data.Dataset):
                 repeat_weights = np.ones(len(seq), dtype=np.float32)
                 repeat_weights[repeat_mask == 1] = self.repeat_penalty
 
+        boundaries = None
         if self.tokenizer_name == "char":
             if self.motif_boundaries:
                 seq = self.tokenizer(
@@ -264,6 +265,24 @@ class HG38Dataset(torch.utils.data.Dataset):
             else:
                 seq = seq["input_ids"][1:-1]  # remove both special tokens
 
+        elif self.tokenizer_name == "ntv2":
+            seq = self.tokenizer(
+                seq,
+                padding="max_length",
+                max_length=self.pad_max_length,
+                truncation=True,
+                add_special_tokens=True,  # NTV2 uses special tokens
+            )
+            # get input_ids
+            seq = seq["input_ids"]
+            if not self.add_eos:
+                # NTV2 already includes EOS, so we remove it
+                seq = seq[:-1]
+            else:
+                # Remove EOS if not wanted
+                if seq[-1] == self.tokenizer.eos_token_id:
+                    seq = seq[:-1]
+
         # convert to tensor
         seq = torch.LongTensor(seq)
         if boundaries is not None and self.motif_boundaries:
@@ -272,7 +291,9 @@ class HG38Dataset(torch.utils.data.Dataset):
             boundaries = torch.zeros_like(seq, dtype=torch.long)
 
         # replace N token with a pad token, so we can ignore it in the loss
-        seq = self.replace_value(seq, self.tokenizer._vocab_str_to_int["N"], self.tokenizer.pad_token_id)
+        # Only do this for character-level tokenizers that have an explicit "N" token
+        if hasattr(self.tokenizer, '_vocab_str_to_int') and "N" in self.tokenizer._vocab_str_to_int:
+            seq = self.replace_value(seq, self.tokenizer._vocab_str_to_int["N"], self.tokenizer.pad_token_id)
 
         # Convert repeat weights to tensor if available
         if repeat_weights is not None:
