@@ -689,10 +689,15 @@ def train(config):
     log.info(f'{config.train.ckpt=} {fsspec_exists(config.train.ckpt)=}')
     # if config.train.get("compile_model", False):
     #     model = torch.compile(model, mode="reduce-overhead")
-    if config.train.ckpt is not None and fsspec_exists(config.train.ckpt):
-        trainer.fit(model, ckpt_path=config.train.ckpt)
-    else:
-        trainer.fit(model)
+
+    try:
+        if config.train.ckpt is not None and fsspec_exists(config.train.ckpt):
+            trainer.fit(model, ckpt_path=config.train.ckpt)
+        else:
+            trainer.fit(model)
+    except Exception as e:
+        log.error(f"Error during training: {e}")
+        # continue test
 
     if config.train.test:
         if config.train.get("cross_validation", False):  # First, load the best validation model

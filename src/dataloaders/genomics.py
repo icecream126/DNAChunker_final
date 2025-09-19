@@ -372,7 +372,8 @@ class NucleotideTransformer(HG38):
             print("**Using Char-level tokenizer**")
             self.tokenizer = CaduceusTokenizer(
                 model_max_length=self.max_length,
-                add_special_tokens=False
+                add_special_tokens=False,
+                padding_side=self.padding_side,
             )
 
         # Create all splits: torch datasets (only train/test in this benchmark)

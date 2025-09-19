@@ -394,7 +394,7 @@ def load_backbone(model, state_dict, freeze_backbone=False, ignore_head=True):
         if loaded_params is None:
             # This should never happen, it should be there!
             print("Missing key in pretrained model!", key)
-            raise Exception
+            used_params = model_new_params_dict[key]
 
         elif ignore_head and 'head' in key:
             # ignore head weights
