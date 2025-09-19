@@ -187,8 +187,8 @@ manage_gpus() {
 for dataset_name in "${DATASET_NAMES[@]}"; do
     for pooling in "sum", "attn_pool"; do
         for seed in $(seq 5 5); do
-            for lr in 1e-4 5e-5 1e-5 5e-6 1e-6; do
-                for batch_size in 32; do
+            for lr in 2e-4 3e-4 4e-4 5e-4; do
+                for batch_size in 32 64; do
     # for pooling in "pool"; do
     #     for seed in $(seq 1 1); do
     #         for lr in 5e-5 1e-5; do

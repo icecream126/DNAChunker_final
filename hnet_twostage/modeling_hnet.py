@@ -38,14 +38,6 @@ def rotate_half(x):
     return torch.cat((-x2, x1), dim=-1)
 
 
-def check_nan_and_replace(tensor, name="tensor", replace_value=0.0):
-    """Check for NaN values and replace them with a default value."""
-    if tensor.isnan().any():
-        print(f"Warning: NaN detected in {name}, replacing with {replace_value}")
-        tensor = torch.where(tensor.isnan(), torch.tensor(replace_value, device=tensor.device, dtype=tensor.dtype), tensor)
-    return tensor
-
-
 class RotaryEmbedding(nn.Module):
     def __init__(self, dim):
         super().__init__()
@@ -119,34 +111,21 @@ class RoutingModule(nn.Module):
         k_aligned = self.w_k(x[:, :-1, :])     # Shape: (batch, seq_len - 1, dim)
 
         # Manually compute cosine similarity for maximum numerical stability
-        # Use float32 for critical computations to avoid float16 precision issues
-        q_aligned_f32 = q_aligned.float()
-        k_aligned_f32 = k_aligned.float()
+        dot_product = torch.sum(q_aligned * k_aligned, dim=-1)
         
-        dot_product = torch.sum(q_aligned_f32 * k_aligned_f32, dim=-1)
+        q_norm = torch.linalg.vector_norm(q_aligned, dim=-1)
+        k_norm = torch.linalg.vector_norm(k_aligned, dim=-1)
         
-        q_norm = torch.linalg.vector_norm(q_aligned_f32, dim=-1)
-        k_norm = torch.linalg.vector_norm(k_aligned_f32, dim=-1)
-        
-        # Use larger epsilon for float16 stability and clamp norms
-        eps = max(torch.finfo(q_norm.dtype).eps, 1e-6)
-        q_norm = q_norm.clamp(min=eps)
-        k_norm = k_norm.clamp(min=eps)
-        norm_product = q_norm * k_norm
+        # Clamp the denominator to a small positive value to prevent division by zero
+        eps = torch.finfo(q_norm.dtype).eps
+        norm_product = (q_norm * k_norm).clamp(min=eps)
         
         similarity = dot_product / norm_product
-        # Clamp similarity to prevent extreme values
-        similarity = similarity.clamp(-1.0, 1.0)
-        
-        # Convert back to original dtype
-        similarity = similarity.to(q_aligned.dtype)
         
         # --- END OF FIX ---
         
         # Boundary probability p_t = 0.5 * (1 - similarity)
         p_values = 0.5 * (1 - similarity)
-        # Clamp probabilities to valid range for numerical stability
-        p_values = p_values.clamp(0.0, 1.0)
         
         # The first token is always a boundary by definition 
         first_p = torch.ones(batch_size, 1, device=x.device, dtype=p_values.dtype)
@@ -154,11 +133,6 @@ class RoutingModule(nn.Module):
 
         # Get discrete boundaries for downsampling
         b = StraightThroughEstimator.apply(p)
-        
-        # Check and fix NaN values
-        p = check_nan_and_replace(p, "boundary probabilities")
-        b = check_nan_and_replace(b, "boundary indicators")
-        
         return p, b
 
 
@@ -190,10 +164,6 @@ class Downsampler(nn.Module):
         # and place them into padded_chunks
         if torch.any(mask):
             padded_chunks[padding_mask] = x[mask]
-        
-        # Check and fix NaN values
-        padded_chunks = check_nan_and_replace(padded_chunks, "padded chunks")
-        chunk_lengths = check_nan_and_replace(chunk_lengths, "chunk lengths")
         
         return padded_chunks, chunk_lengths
 
@@ -244,7 +214,7 @@ class CrossAttentionUpsampler(nn.Module):
             attn_mask=attn_mask,  # ← Now using the padding mask!
             dropout_p=0.0, 
             is_causal=False, 
-            scale=None,
+            scale=None
         )
 
         attn_output = attn_output.transpose(1, 2).contiguous().view(B, L_q, D)
@@ -417,7 +387,7 @@ class HNetEmbeddingsSTFT(nn.Module):
         )
 
     def forward(self, input_ids):
-        # raise ValueError
+        # import pdb; pdb.set_trace()
         """
         input_ids: (batch_size, seq_len)
         """
@@ -451,8 +421,6 @@ class HNetEmbeddingsSTFT(nn.Module):
 
         # d) Use the magnitude of the complex output (power spectrum)
         stft_mag = stft_complex.abs()
-        # Add small epsilon to prevent numerical issues with float16
-        stft_mag = stft_mag + 1e-8
 
         # e) Reshape back to separate batch and vocab dimensions
         num_freq_bins = stft_mag.shape[1]
@@ -506,28 +474,24 @@ class RotarySelfAttention(nn.Module):
 
         if q.isnan().any() or k.isnan().any():
             print("Q or K is nan")
-            raise ValueError
+            import pdb; pdb.set_trace()
         q, k = self.rotary_emb(q, k)
         if q.isnan().any() or k.isnan().any():
             print("Q or K is nan after rotary")
-            raise ValueError
+            import pdb; pdb.set_trace()
 
         if attention_mask is not None and attention_mask.all(dim=-1).any():
             print("!!! All-masked scenario detected. One or more batch items have no keys to attend to. !!!")
-            raise ValueError  
+            import pdb; pdb.set_trace()  
         
         # NORMALIZE Q AND K RIGHT BEFORE THE ATTENTION FUNCTION
         # This prevents their dot product from exploding.
         q = self.q_norm(q)
         k = self.k_norm(k)
-        
-        # Additional stability for float16: clamp extreme values
-        q = q.clamp(-10.0, 10.0)
-        k = k.clamp(-10.0, 10.0)
 
         if q.isnan().any() or k.isnan().any():
             print("Q or K is nan after norm")
-            raise ValueError
+            import pdb; pdb.set_trace()
 
         # This function will now receive stable inputs.
         attn_output = F.scaled_dot_product_attention(q, k, v, attn_mask=attention_mask.to(q.dtype), is_causal=False, scale=None)
@@ -563,9 +527,6 @@ class TransformerBlock(nn.Module):
     def forward(self, x, attention_mask=None):
         x = x + self.attn(self.norm1(x), attention_mask=attention_mask)
         x = x + self.mlp(self.norm2(x))
-        if x.isnan().any():
-            print("X is nan")
-            raise ValueError
         return x
 
 
@@ -700,7 +661,6 @@ class HNetMixerModel(nn.Module):
         
         # Print original sequence length
         seq_len = input_ids.shape[1] if input_ids is not None else hidden_states.shape[1]
-
         residual = None
         
         if output_hidden_states:
@@ -749,22 +709,12 @@ class HNetMixerModel(nn.Module):
         attention_mask = torch.arange(max_chunks, device=x_s2.device)[None, :] >= chunk_lengths_s2[:, None]
         attention_mask = attention_mask[:, None, None, :]
         
-        if p_stage2.isnan().any():
-            print("P stage 2 is nan")
-            raise ValueError
-        if attention_mask.isnan().any():
-            print("Attention mask is nan")
-            raise ValueError
-        if main_hidden_states.isnan().any():
-            print("Main hidden states is nan")
-            raise ValueError
-
         for layer in self.main_model:
             main_hidden_states = layer(main_hidden_states, attention_mask=attention_mask)
         
         if main_hidden_states.isnan().any():
             print("Main hidden states is nan")
-            raise ValueError
+            import pdb; pdb.set_trace()
         z_hat_s2 = main_hidden_states
         all_hidden_states.append((z_hat_s2, attention_mask))
 
@@ -785,28 +735,18 @@ class HNetMixerModel(nn.Module):
         residual = None
         for layer in self.decoder_layers:
             hidden_states, residual = layer(hidden_states, residual, inference_params=None)
-        
-        if hidden_states.isnan().any():
-            print("Hidden states is nan")
-            raise ValueError
 
         # === LOSS CALCULATION ===
-        # Combined ratio loss from both stages with numerical stability
+        # Combined ratio loss from both stages
         f1 = b_stage1.sum(dim=1) / b_stage1.shape[1]
         G1 = p_stage1.mean(dim=1)
         N1 = 1.0 / self.target_ratio_stage1
-        # Clamp values to prevent numerical issues
-        f1 = f1.clamp(0.0, 1.0)
-        G1 = G1.clamp(0.0, 1.0)
         ratio_loss_stage1 = (N1 / (N1 - 1)) * ((N1 - 1) * f1 * G1 + (1 - f1) * (1 - G1)) if N1 > 1 else torch.zeros_like(f1)
         ratio_loss_stage1 = ratio_loss_stage1.mean()
 
         f2 = b_stage2.sum(dim=1) / b_stage2.shape[1]
         G2 = p_stage2.mean(dim=1)
         N2 = 1.0 / self.target_ratio_stage2
-        # Clamp values to prevent numerical issues
-        f2 = f2.clamp(0.0, 1.0)
-        G2 = G2.clamp(0.0, 1.0)
         ratio_loss_stage2 = (N2 / (N2 - 1)) * ((N2 - 1) * f2 * G2 + (1 - f2) * (1 - G2)) if N2 > 1 else torch.zeros_like(f2)
         ratio_loss_stage2 = ratio_loss_stage2.mean()
 
@@ -859,11 +799,6 @@ class HNetPreTrainedModel(PreTrainedModel):
     base_model_prefix = "caduceus_hnet_transformer"
     supports_gradient_checkpointing = False
     _no_split_modules = ["BiMambaWrapper", "TransformerBlock"]
-    
-    def __init__(self, config, **kwargs):
-        super().__init__(config, **kwargs)
-        # Enable automatic mixed precision for numerical stability
-        self.use_amp = True
 
     def _init_weights(
             self,
