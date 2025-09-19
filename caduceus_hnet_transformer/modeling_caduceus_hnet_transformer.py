@@ -344,7 +344,7 @@ class CaduceusEmbeddingsSTFT(nn.Module):
         )
 
     def forward(self, input_ids):
-        # import pdb; pdb.set_trace()
+        # raise ValueError
         """
         input_ids: (batch_size, seq_len)
         """
@@ -565,7 +565,7 @@ class CaduceusMixerModel(nn.Module):
         # 2. Chunking
         p_original, b_original = self.routing_module(x_hat)
 
-        import pdb; pdb.set_trace()
+        raise ValueError
         if boundaries is not None:
             mask = boundaries[:, 1:] != 0
             if mask.any():

@@ -2,7 +2,7 @@
 defaults:
   - /pipeline: genomic_benchmark
   - /model: ???
-  - override /scheduler: cosine_warmup_timm
+  - override /scheduler: plateau
 
 # there are 8 datasets in this suite, choose 1 at a time, with their corresponding settings
 # name                                num_seqs        num_classes     median len    std
@@ -37,12 +37,10 @@ dataset:
   rc_aug: false  # reverse complement augmentation
 
 scheduler:
-# COSINE TIMM
-  t_in_epochs: False
-  t_initial: ${eval:${div_up:${dataset.train_len}, ${train.global_batch_size}} * ${trainer.max_epochs}}
-  warmup_lr_init: 1e-6
-  warmup_t: ${eval:${div_up:${dataset.train_len}, ${train.global_batch_size}} * ${trainer.max_epochs} * 0.01}
-  lr_min: ${eval:0.1 * ${optimizer.lr}}
+# PLATEAU SCHEDULER
+  patience: 20
+  factor: 0.2
+  min_lr: 0.0
 
 
 optimizer:

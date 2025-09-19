@@ -89,6 +89,28 @@ class CharacterTokenizer(PreTrainedTokenizer):
     def convert_tokens_to_string(self, tokens):
         return "".join(tokens)
 
+    def __call__(self, text, add_special_tokens=True, padding=False, truncation=False, max_length=None, return_attention_mask=True, **kwargs):
+        """Override the call method to return attention masks by default."""
+        # Call the parent method
+        result = super().__call__(
+            text=text,
+            add_special_tokens=add_special_tokens,
+            padding=padding,
+            truncation=truncation,
+            max_length=max_length or self.model_max_length,
+            return_attention_mask=return_attention_mask,
+            **kwargs
+        )
+        
+        # If attention_mask is not already present, create it
+        if return_attention_mask and "attention_mask" not in result:
+            # Create attention mask: 1 for valid tokens, 0 for padding
+            input_ids = result["input_ids"]
+            attention_mask = [1 if token_id != self.pad_token_id else 0 for token_id in input_ids]
+            result["attention_mask"] = attention_mask
+            
+        return result
+
     def build_inputs_with_special_tokens(
             self, token_ids_0: List[int], token_ids_1: Optional[List[int]] = None
     ) -> List[int]:

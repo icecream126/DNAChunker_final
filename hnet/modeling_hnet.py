@@ -379,7 +379,7 @@ class HNetEmbeddingsSTFT(nn.Module):
         )
 
     def forward(self, input_ids):
-        # import pdb; pdb.set_trace()
+        # raise ValueError
         """
         input_ids: (batch_size, seq_len)
         """
@@ -466,15 +466,15 @@ class RotarySelfAttention(nn.Module):
 
         if q.isnan().any() or k.isnan().any():
             print("Q or K is nan")
-            import pdb; pdb.set_trace()
+            raise ValueError
         q, k = self.rotary_emb(q, k)
         if q.isnan().any() or k.isnan().any():
             print("Q or K is nan after rotary")
-            import pdb; pdb.set_trace()
+            raise ValueError
 
         if attention_mask is not None and attention_mask.all(dim=-1).any():
             print("!!! All-masked scenario detected. One or more batch items have no keys to attend to. !!!")
-            import pdb; pdb.set_trace()  
+            raise ValueError  
         
         # NORMALIZE Q AND K RIGHT BEFORE THE ATTENTION FUNCTION
         # This prevents their dot product from exploding.
@@ -483,7 +483,7 @@ class RotarySelfAttention(nn.Module):
 
         if q.isnan().any() or k.isnan().any():
             print("Q or K is nan after norm")
-            import pdb; pdb.set_trace()
+            raise ValueError
 
         # This function will now receive stable inputs.
         attn_output = F.scaled_dot_product_attention(q, k, v, attn_mask=attention_mask.to(q.dtype), is_causal=False, scale=None)
@@ -654,7 +654,7 @@ class HNetMixerModel(nn.Module):
             main_hidden_states = layer(main_hidden_states, attention_mask=attention_mask)
         if main_hidden_states.isnan().any():
             print("Main hidden states is nan")
-            import pdb; pdb.set_trace()
+            raise ValueError
         z_hat_s = main_hidden_states
         all_hidden_states.append((z_hat_s, attention_mask))
 
@@ -696,7 +696,7 @@ class HNetMixerModel(nn.Module):
 
         # if ratio_loss.isnan().any():
         #     print("Ratio loss is nan")
-        #     import pdb; pdb.set_trace()
+        #     raise ValueError
         # if hidden_states.isnan().any():
         #     print("Hidden states is nan")
         #     import pdb; pdb.set_trace(1)

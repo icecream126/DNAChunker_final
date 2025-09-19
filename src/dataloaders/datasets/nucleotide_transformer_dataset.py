@@ -53,15 +53,15 @@ class NucleotideTransformerDataset(torch.utils.data.Dataset):
         cache_path = '/workspace/huggingface/nt_disk'
 
         if os.path.exists(cache_path):
-            # import pdb; pdb.set_trace()
+            # raise ValueError
             self.seqs = load_from_disk(os.path.join(cache_path, split))
             self.seqs = self.seqs.filter(lambda x: x["task"]==dataset_name)
         else:
-            # import pdb; pdb.set_trace()
+            # raise ValueError
             self.seqs = load_dataset("InstaDeepAI/nucleotide_transformer_downstream_tasks")
             self.seqs.save_to_disk(cache_path)
             self.seqs = self.seqs[split].filter(lambda x: x["task"]==dataset_name)
-        # import pdb; pdb.set_trace()
+        # raise ValueError
 
     def __len__(self):
         return len(self.seqs)
@@ -81,7 +81,6 @@ class NucleotideTransformerDataset(torch.utils.data.Dataset):
             truncation=True,
         )
         seq_ids = seq["input_ids"]  # get input_ids
-
         # need to handle eos here
         if self.add_eos:
             # append list seems to be faster than append tensor
@@ -112,4 +111,8 @@ class NucleotideTransformerDataset(torch.utils.data.Dataset):
         # `seq` has shape:
         #     - (seq_len,) if not conjoining
         #     - (seq_len, 2) for conjoining
-        return seq_ids, target
+        
+        # Create attention mask for padding tokens
+        pad_token_id = self.tokenizer.pad_token_id
+        attention_mask = (seq_ids != pad_token_id)
+        return seq_ids, target, {"attention_mask": attention_mask}

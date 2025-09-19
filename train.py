@@ -77,7 +77,7 @@ class CustomWandbLogger(WandbLogger):
 
     def __init__(self, *args, **kwargs):
         """Modified logger that insists on a wandb.init() call and catches wandb's error if thrown."""
-
+        self._wandb_failed = False
         super().__init__(*args, **kwargs)
 
     @property
@@ -91,6 +91,10 @@ class CustomWandbLogger(WandbLogger):
             self.logger.experiment.some_wandb_function()
         """
         if self._experiment is None:
+            if self._wandb_failed:
+                self._experiment = DummyExperiment()
+                return self._experiment
+                
             if self._offline:
                 os.environ["WANDB_MODE"] = "dryrun"
 
@@ -109,12 +113,30 @@ class CustomWandbLogger(WandbLogger):
                 # create new wandb process
                 while True:
                     try:
+                        # Check if wandb is properly configured
+                        if not wandb.api.api_key:
+                            log.warning("WANDB_API_KEY not found. Setting WANDB_MODE to offline.")
+                            os.environ["WANDB_MODE"] = "offline"
+                        
                         self._experiment = wandb.init(**self._wandb_init)
                         break
                     except Exception as e:
-                        log.error("wandb Exception:\n", e)
+                        log.error(f"wandb Exception: {type(e).__name__}: {str(e)}")
+                        log.error(f"wandb_init parameters: {self._wandb_init}")
+                        
+                        # If it's a configuration error, don't retry indefinitely
+                        if "config" in str(e).lower() or "project" in str(e).lower():
+                            log.error("Configuration error detected. Setting WANDB_MODE to offline.")
+                            os.environ["WANDB_MODE"] = "offline"
+                            try:
+                                self._experiment = wandb.init(**self._wandb_init)
+                                break
+                            except Exception as e2:
+                                log.error(f"Failed to initialize wandb in offline mode: {e2}")
+                                raise e2
+                        
                         t = random.randint(30, 60)
-                        log.warning(f"Sleeping for {t} seconds")
+                        log.warning(f"Sleeping for {t} seconds before retry")
                         time.sleep(t)
 
                 # define default x-axis
@@ -342,7 +364,7 @@ class SequenceLightningModule(pl.LightningModule):
         if prefix == 'train':
             loss = self.loss(x, y, **w)
         else:
-            # import pdb; pdb.set_trace()
+            # raise ValueError
             loss = self.loss_val(x, y, **w)
 
         sync_dist = True
@@ -386,7 +408,7 @@ class SequenceLightningModule(pl.LightningModule):
         )
         if loss.isnan():
             print("Loss is nan")
-            import pdb; pdb.set_trace()
+            raise ValueError
         return loss
 
     def on_train_epoch_start(self):

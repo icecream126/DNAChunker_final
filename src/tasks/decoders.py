@@ -170,7 +170,7 @@ class AttnPool(nn.Module):
         # Create a learnable query for attention pooling
         if attn_mask is not None:
             # Use mean of valid tokens only (where attn_mask is False)
-            valid_mask = ~attn_mask  # (batch, seq_len) - True for valid tokens
+            valid_mask = attn_mask  # (batch, seq_len) - True for valid tokens
             valid_counts = valid_mask.sum(dim=1, keepdim=True).float()  # (batch, 1)
             
             # Mask out padding tokens and sum
@@ -189,7 +189,7 @@ class AttnPool(nn.Module):
             query=query,
             key=x,
             value=x,
-            key_padding_mask=attn_mask
+            key_padding_mask=(~attn_mask).float()
         )
         
         # Apply layer norm and return pooled representation
@@ -230,7 +230,7 @@ class SequenceDecoder(Decoder):
         self.conjoin_train = conjoin_train
         self.conjoin_test = conjoin_test
 
-    def forward(self, x, state=None, lengths=None, l_output=None):
+    def forward(self, x, state=None, lengths=None, l_output=None, attention_mask=None):
         """
         x: (n_batch, l_seq, d_model) or potentially (n_batch, l_seq, d_model, 2) if using rc_conjoin
         Returns: (n_batch, l_output, d_output)
@@ -249,32 +249,70 @@ class SequenceDecoder(Decoder):
         if self.mode == "last":
             def restrict(x_seq):
                 """Use last l_output elements of sequence."""
-                return x_seq[..., -l_output:, :]
+                if attention_mask is not None:
+                    # Find the last valid position for each sequence
+                    valid_lengths = attention_mask.sum(dim=1)  # (B,)
+                    # Ensure we don't go beyond valid length
+                    actual_l_output = torch.minimum(valid_lengths, torch.tensor(l_output, device=x_seq.device))
+                    # For each sequence, take the last actual_l_output elements
+                    result = []
+                    for i in range(x_seq.size(0)):
+                        seq_len = actual_l_output[i].item()
+                        if seq_len > 0:
+                            result.append(x_seq[i, -seq_len:, :])
+                        else:
+                            # If no valid tokens, return zeros
+                            result.append(torch.zeros(l_output, x_seq.size(-1), device=x_seq.device, dtype=x_seq.dtype))
+                    return torch.stack(result)
+                else:
+                    return x_seq[..., -l_output:, :]
 
         elif self.mode == "first":
             def restrict(x_seq):
                 """Use first l_output elements of sequence."""
-                return x_seq[..., :l_output, :]
+                if attention_mask is not None:
+                    # Find the first valid position for each sequence
+                    valid_lengths = attention_mask.sum(dim=1)  # (B,)
+                    # Ensure we don't go beyond valid length
+                    actual_l_output = torch.minimum(valid_lengths, torch.tensor(l_output, device=x_seq.device))
+                    # For each sequence, take the first actual_l_output elements
+                    result = []
+                    for i in range(x_seq.size(0)):
+                        seq_len = actual_l_output[i].item()
+                        if seq_len > 0:
+                            result.append(x_seq[i, :seq_len, :])
+                        else:
+                            # If no valid tokens, return zeros
+                            result.append(torch.zeros(l_output, x_seq.size(-1), device=x_seq.device, dtype=x_seq.dtype))
+                    return torch.stack(result)
+                else:
+                    return x_seq[..., :l_output, :]
 
         elif self.mode == "pool":
+            # print(f"Attention mask is : {attention_mask}")
             def restrict(x_seq):
-                """Pool sequence over a certain range"""
-                L = x_seq.size(1)
-                s = x_seq.sum(dim=1, keepdim=True)
-                if l_output > 1:
-                    c = torch.cumsum(x_seq[..., -(l_output - 1):, ...].flip(1), dim=1)
-                    c = F.pad(c, (0, 0, 1, 0))
-                    s = s - c  # (B, l_output, D)
-                    s = s.flip(1)
-                denom = torch.arange(
-                    L - l_output + 1, L + 1, dtype=x_seq.dtype, device=x_seq.device
-                )
-                s = s / denom
-                return s
+                """Pool entire sequence into single output"""
+                # x_seq is (batch, seq_len, d_model)
+                if attention_mask is not None:
+                    # Apply attention mask: set masked positions to 0
+                    masked_x = x_seq * attention_mask.unsqueeze(-1)
+                    # Sum over valid (non-masked) positions
+                    s = masked_x.sum(dim=1, keepdim=True)
+                    # Count valid positions for each sample
+                    valid_lengths = attention_mask.sum(dim=1, keepdim=True).unsqueeze(-1)  # (B, 1, 1)
+                    # Avoid division by zero
+                    valid_lengths = torch.clamp(valid_lengths, min=1)
+                    return s / valid_lengths
+                else:
+                    s = x_seq.sum(dim=1, keepdim=True)
+                    L = x_seq.size(1)
+                    return s / L
         elif self.mode == "sum":
-            # TODO use same restrict function as pool case
             def restrict(x_seq):
                 """Cumulative sum last l_output elements of sequence."""
+                if attention_mask is not None:
+                    # Apply attention mask: set masked positions to 0
+                    x_seq = x_seq * attention_mask.unsqueeze(-1)
                 return torch.cumsum(x_seq, dim=-2)[..., -l_output:, :]
         elif self.mode == 'attn_pool':
             def restrict(x_seq):
@@ -319,6 +357,7 @@ class SequenceDecoder(Decoder):
             x = tot_sum / val_len.unsqueeze(-1)  # (b, 1, d)
         else:
             x = restrict(x)
+        
         if squeeze and self.mode != 'attn_pool':
             assert x.size(1) == 1
             x = x.squeeze(1)

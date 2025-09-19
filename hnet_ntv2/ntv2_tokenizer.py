@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Union
 
+import numpy as np
 from transformers import AutoTokenizer, AutoModelForMaskedLM
 from transformers.tokenization_utils import PreTrainedTokenizer
 
@@ -151,3 +152,63 @@ class NTV2Tokenizer(PreTrainedTokenizer):
         else:
             # Fallback to default config
             return cls()
+
+    def _calculate_boundaries(self, text: str, motif_list: Optional[List[str]] = None) -> np.ndarray:
+        """
+        Calculate boundaries using efficient string operations (DDP-friendly and no file descriptor issues).
+        """
+        if not text or not motif_list:
+            return np.zeros(len(text), dtype=np.int8)
+        
+        # Filter out empty strings
+        valid_motifs = [m for m in motif_list if m]
+        if not valid_motifs:
+            return np.zeros(len(text), dtype=np.int8)
+        
+        boundaries = np.zeros(len(text), dtype=np.int8)
+        
+        # Use efficient string.find() method for each motif
+        for motif in valid_motifs:
+            if not motif:  # Skip empty motifs
+                continue
+                
+            start = 0
+            while True:
+                # Find the next occurrence of the motif
+                pos = text.find(motif, start)
+                if pos == -1:  # No more occurrences
+                    break
+                
+                # Set boundaries at start and end of motif
+                boundaries[pos] = 1
+                boundaries[pos + len(motif) - 1] = 1
+                
+                # Move start position to avoid infinite loops
+                start = pos + 1
+        
+        return boundaries
+
+    def __call__(self, text, **kwargs):
+        """
+        Override the __call__ method to include boundaries and handle padding.
+        """
+        # This method is designed to work with a single string.
+        if not isinstance(text, str):
+            raise NotImplementedError(
+                "This custom tokenizer __call__ does not support batch encoding."
+            )
+
+        # Use the underlying tokenizer for most of the work
+        result = self._tokenizer(text, **kwargs)
+        
+        # Extract motif_list if provided for boundary calculation
+        motif_list = kwargs.get("motif_list", None)
+        
+        # Calculate boundaries if motif_list is provided
+        if motif_list is not None:
+            boundaries = self._calculate_boundaries(text, motif_list)
+            result["boundaries"] = boundaries
+        else:
+            result["boundaries"] = None
+
+        return result

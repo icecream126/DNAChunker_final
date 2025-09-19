@@ -210,5 +210,16 @@ class CaduceusTokenizer(PreTrainedTokenizer):
                 else:  # 'left'
                     input_ids = ([self.pad_token_id] * pad_length) + input_ids
                     boundaries = np.pad(boundaries, (pad_length, 0), "constant", constant_values=0)
+        
+        # input_ids is a lis of integers
+        input_id_torch = torch.tensor(input_ids, dtype=torch.long)
+        attention_mask = (input_id_torch != self.pad_token_id).float()
 
-        return {"input_ids": input_ids, "boundaries": boundaries}
+        # DEBUGGING
+        # print(f"PAD TOKEN ID: {self.pad_token_id}")
+        # print(f"INPUT IDS: {input_ids}")
+        # print(f"INPUT IDS TORCH: {input_id_torch}")
+        # print(f"INPUT IDS TORCH != PAD TOKEN ID: {input_id_torch != self.pad_token_id}")
+        # print(f"INPUT IDS TORCH != PAD TOKEN ID: {input_id_torch != self.pad_token_id}")
+
+        return {"input_ids": input_ids, "boundaries": boundaries, "attention_mask": attention_mask}

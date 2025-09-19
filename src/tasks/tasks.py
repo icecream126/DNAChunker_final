@@ -150,11 +150,14 @@ class BaseTask:
             assert len(z) == 1 and isinstance(z[0], dict), "Dataloader must return dictionary of extra arguments"
             z = z[0]
 
+        # pop attention mask and use only in decoder
+        attention_mask = z.pop("attention_mask", None)
+
         # w can model-specific constructions, such as key_padding_mask for transformers or state for RNNs
         x, w = encoder(x, **z)
         x, state = model(x, **w, state=_state)
         self._state = state
-        x, w = decoder(x, state=state, **z)
+        x, w = decoder(x, state=state, attention_mask=attention_mask, **z)
         return x, y, w
 
 
@@ -188,6 +191,10 @@ class LMTask(BaseTask):
         
         # Remove repeat_weights from model kwargs - they should only go to loss function
         model_kwargs.pop("repeat_weights", None)
+        
+        # Remove mask parameters from model kwargs - they should only go to loss function
+        model_kwargs.pop("mask", None)
+        model_kwargs.pop("attention_mask", None)
         
         if "state" in inspect.signature(model.forward).parameters.keys():
             output, state = model(x, **model_kwargs, state=_state)

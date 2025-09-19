@@ -52,30 +52,47 @@ class GenomicBenchmarkDataset(torch.utils.data.Dataset):
         self.conjoin_test = conjoin_test
         self.return_mask = return_mask
 
-        if not is_downloaded(dataset_name, cache_path=dest_path):
-            print("downloading {} to {}".format(dataset_name, dest_path))
-            download_dataset(dataset_name, version=0, dest_path=dest_path)
-        else:
-            print("already downloaded {}-{}".format(split, dataset_name))
-
         self.split = split
 
-        # use Path object
-        base_path = Path(dest_path) / dataset_name / split
 
-        self.all_seqs = []
-        self.all_labels = []
-        label_mapper = {}
+        if dataset_name.islower():
+            if not is_downloaded(dataset_name, cache_path=dest_path):
+                print("downloading {} to {}".format(dataset_name, dest_path))
+                download_dataset(dataset_name, version=0, dest_path=dest_path)
+            else:
+                print("already downloaded {}-{}".format(split, dataset_name))
 
-        for i, x in enumerate(sorted(base_path.iterdir())):
-            label_mapper[x.stem] = i
+            # use Path object
+            base_path = Path(dest_path) / dataset_name / split
 
-        for label_type in label_mapper.keys():
-            for path in (base_path / label_type).iterdir():
-                with open(path, "r") as f:
-                    content = f.read()
-                self.all_seqs.append(content)
-                self.all_labels.append(label_mapper[label_type])
+            self.all_seqs = []
+            self.all_labels = []
+            label_mapper = {}
+
+            for i, x in enumerate(sorted(base_path.iterdir())):
+                label_mapper[x.stem] = i
+
+            for label_type in label_mapper.keys():
+                for path in (base_path / label_type).iterdir():
+                    with open(path, "r") as f:
+                        content = f.read()
+                    self.all_seqs.append(content)
+                    self.all_labels.append(label_mapper[label_type])
+        
+        else: 
+            import os
+            from datasets import load_dataset, load_from_disk
+            print("USING HUGGINGFACE DATASET")
+            cache_path = f'/workspace/huggingface/gb_disk/{dataset_name}'
+            if os.path.exists(cache_path):
+                dt = load_from_disk(os.path.join(cache_path, split))
+                self.all_seqs = dt["seq"]
+                self.all_labels = dt["label"]
+            else:
+                dt = load_dataset(f"katarinagresova/{dataset_name}")
+                self.all_seqs = dt[split]["seq"]
+                self.all_labels = dt[split]["label"]
+                dt.save_to_disk(cache_path)
 
     def __len__(self):
         return len(self.all_labels)
@@ -98,8 +115,14 @@ class GenomicBenchmarkDataset(torch.utils.data.Dataset):
 
         # need to handle eos here
         # if self.add_eos:
-        # append list seems to be faster than append tensor
-        seq_ids.append(self.tokenizer.sep_token_id)
+        # # append list seems to be faster than append tensor
+        #     seq_ids.append(self.tokenizer.sep_token_id)
+        #     # Update attention mask to match the added separator token
+        #     if self.return_mask:
+        #         # Add 1 to attention mask for the separator token
+        #         attention_mask = seq["attention_mask"].tolist()
+        #         attention_mask.append(1.0)  # separator token is always valid
+        #         seq["attention_mask"] = torch.tensor(attention_mask, dtype=torch.float)
 
         if self.conjoin_train or (self.conjoin_test and self.split != "train"):
             x_rc = string_reverse_complement(x)
@@ -127,7 +150,6 @@ class GenomicBenchmarkDataset(torch.utils.data.Dataset):
         # `seq` has shape:
         #     - (seq_len,) if not conjoining
         #     - (seq_len, 2) for conjoining
-        if self.return_mask:
-            return seq_ids, target, {"mask": torch.BoolTensor(seq["attention_mask"])}
-        else:
-            return seq_ids, target
+        pad_token_id = self.tokenizer.pad_token_id
+        attention_mask = (seq_ids != pad_token_id)
+        return seq_ids, target, {"attention_mask": attention_mask}

@@ -53,15 +53,15 @@ class NucleotideTransformer2Dataset(torch.utils.data.Dataset):
         cache_path = '/workspace/huggingface/nt_revised_disk'
 
         if os.path.exists(cache_path):
-            # import pdb; pdb.set_trace()
+            # raise ValueError
             self.seqs = load_from_disk(os.path.join(cache_path, split))
             self.seqs = self.seqs.filter(lambda x: x["task"]==dataset_name)
         else:
-            # import pdb; pdb.set_trace()
+            # raise ValueError
             self.seqs = load_dataset("InstaDeepAI/nucleotide_transformer_downstream_tasks_revised")
             self.seqs.save_to_disk(cache_path)
             self.seqs = self.seqs[split].filter(lambda x: x["task"]==dataset_name)
-        # import pdb; pdb.set_trace()
+        # raise ValueError
 
     def __len__(self):
         return len(self.seqs)

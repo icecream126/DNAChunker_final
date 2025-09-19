@@ -33,7 +33,6 @@ model = {
     "hnet_lm": "hnet.modeling_hnet.HNetTransformerForMaskedLM",
     "hnet_mlm": "hnet_mlm.modeling_hnet.HNetTransformerForMaskedLM",
     "hnet_twostage": "hnet_twostage.modeling_hnet.HNetTransformerForMaskedLM",
-    "hnet_ntv2_lm": "hnet_ntv2.modeling_hnet_ntv2.HNetNTV2ForMaskedLM",
 
     # Downstream task embedding backbones
     "dna_embedding": "src.models.sequence.dna_embedding.DNAEmbeddingModel",
@@ -42,6 +41,7 @@ model = {
     "dna_embedding_caduceus_hnet": "src.models.sequence.dna_embedding.DNAEmbeddingModelCaduceusHNet",
     "dna_embedding_caduceus_hnet_motif": "src.models.sequence.dna_embedding.DNAEmbeddingModelCaduceusHNetMotif",
     "dna_embedding_hnet": "src.models.sequence.dna_embedding.DNAEmbeddingModelHNet",
+    "dna_embedding_hnet_twostage": "src.models.sequence.dna_embedding.DNAEmbeddingModelHNetTwostage",
 
     # Baseline for genomics benchmark
     "genomics_benchmark_cnn": "src.models.baseline.genomics_benchmark_cnn.GenomicsBenchmarkCNN",
@@ -71,5 +71,4 @@ callbacks = {
 
 model_state_hook = {
     'load_backbone': 'src.models.sequence.dna_embedding.load_backbone',
-    'load_ntv2_weights': 'hnet_ntv2.modeling_hnet_ntv2.load_ntv2_weights',
 }

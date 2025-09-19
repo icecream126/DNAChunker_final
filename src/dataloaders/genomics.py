@@ -43,7 +43,7 @@ class HG38(SequenceDataset):
     """
     _name_ = "hg38"  # this name is how the dataset config finds the right dataloader
 
-    def __init__(self, bed_file, fasta_file, tokenizer_name=None, dataset_config_name=None, max_length=1024, pad_max_length=None, d_output=2,
+    def __init__(self, bed_file, fasta_file, tokenizer_name=None, dataset_config_name=None, max_length=1024, d_output=2,
                  rc_aug=False,
                  max_length_val=None, max_length_test=None, val_ratio=0.0005, val_split_seed=2357,
                  add_eos=True, detokenize=False, val_only=False, batch_size=32, batch_size_eval=None, shuffle=False,
@@ -58,7 +58,6 @@ class HG38(SequenceDataset):
         self.d_output = d_output
         self.rc_aug = rc_aug  # reverse compliment augmentation
         self.max_length = max_length
-        self.pad_max_length = pad_max_length if pad_max_length is not None else max_length
         self.max_length_val = max_length_val if max_length_val is not None else max_length
         self.max_length_test = max_length_test if max_length_test is not None else max_length
         self.val_ratio = val_ratio
@@ -113,13 +112,6 @@ class HG38(SequenceDataset):
                 model_max_length=self.max_length,
                 add_special_tokens=False
             )
-        elif self.tokenizer_name == "ntv2":
-            from hnet_ntv2.ntv2_tokenizer import NTV2Tokenizer
-            logger.info("**Using NTV2 tokenizer**")
-            self.tokenizer = NTV2Tokenizer(
-                model_max_length=self.max_length,
-                add_special_tokens=False
-            )
         else:
             raise NotImplementedError(f"Tokenizer {self.tokenizer_name} not implemented.")
 
@@ -146,7 +138,6 @@ class HG38(SequenceDataset):
                         bed_file=self.bed_file,
                         fasta_file=self.fasta_file,
                         max_length=max_len,
-                        pad_max_length=self.pad_max_length,
                         tokenizer=self.tokenizer,  # pass the tokenize wrapper
                         tokenizer_name=self.tokenizer_name,
                         add_eos=self.add_eos,
@@ -227,8 +218,8 @@ class GenomicBenchmark(HG38):
             self, dataset_name, train_val_split_seed,
             dest_path=None, tokenizer_name="char", d_output=None, rc_aug=False,
             conjoin_train=False, conjoin_test=False,
-            max_length=1024, pad_max_length=None, use_padding=True, max_length_val=None, max_length_test=None,
-            padding_side="left", val_ratio=0.0005, val_split_seed=2357, add_eos=False,
+            max_length=1024, use_padding=True, max_length_val=None, max_length_test=None,
+            padding_side="right", val_ratio=0.0005, val_split_seed=2357, add_eos=True,
             detokenize=False, val_only=False, batch_size=32, batch_size_eval=None, num_workers=1,
             shuffle=True, pin_memory=False, drop_last=False, fault_tolerant=False, ddp=False,
             fast_forward_epochs=None, fast_forward_batches=None, motif_boundaries=False, *args, **kwargs
@@ -287,14 +278,14 @@ class GenomicBenchmark(HG38):
             # )
             self.tokenizer = CaduceusTokenizer(
                 model_max_length=self.max_length,
-                add_special_tokens=False
+                add_special_tokens=False,
+                padding_side=self.padding_side,
             )
         # Create all splits: torch datasets (only train/test in this benchmark, val created below)
         self.dataset_train, self.dataset_test = [
             GenomicBenchmarkDataset(
                 split=split,
                 max_length=max_len,
-                pad_max_length=self.pad_max_length,
                 dataset_name=self.dataset_name,
                 tokenizer=self.tokenizer,  # pass the tokenize wrapper
                 tokenizer_name=self.tokenizer_name,
@@ -305,7 +296,8 @@ class GenomicBenchmark(HG38):
                 rc_aug=self.rc_aug,
                 conjoin_train=self.conjoin_train,
                 conjoin_test=self.conjoin_test,
-                return_augs=False
+                return_augs=False,
+                return_mask=True,
             )
             for split, max_len in zip(["train", "test"], [self.max_length, self.max_length_val])
         ]
@@ -331,7 +323,7 @@ class NucleotideTransformer(HG38):
     def __init__(self, dataset_name, train_val_split_seed,
                  tokenizer_name="char", d_output=None, rc_aug=False,
                  conjoin_train=False, conjoin_test=False,
-                 max_length=1024, pad_max_length=None, use_padding=True, max_length_val=None, max_length_test=None,
+                 max_length=1024, use_padding=True, max_length_val=None, max_length_test=None,
                  padding_side="left", val_ratio=0.0005, val_split_seed=2357, add_eos=False,
                  detokenize=False, val_only=False, batch_size=32, batch_size_eval=None, num_workers=1,
                  shuffle=True, shuffle_eval=None, pin_memory=False, drop_last=False, fault_tolerant=False, ddp=False,
@@ -421,7 +413,7 @@ class NucleotideTransformer2(HG38):
     def __init__(self, dataset_name, train_val_split_seed,
                  tokenizer_name="char", d_output=None, rc_aug=False,
                  conjoin_train=False, conjoin_test=False,
-                 max_length=1024, pad_max_length=None, use_padding=True, max_length_val=None, max_length_test=None,
+                 max_length=1024, use_padding=True, max_length_val=None, max_length_test=None,
                  padding_side="left", val_ratio=0.0005, val_split_seed=2357, add_eos=False,
                  detokenize=False, val_only=False, batch_size=32, batch_size_eval=None, num_workers=1,
                  shuffle=True, shuffle_eval=None, pin_memory=False, drop_last=False, fault_tolerant=False, ddp=False,
@@ -468,10 +460,16 @@ class NucleotideTransformer2(HG38):
 
         if self.tokenizer_name == "char":
             print("**Using Char-level tokenizer**")
-            self.tokenizer = CaduceusTokenizer(
-                model_max_length=self.max_length,
-                add_special_tokens=False
+            self.tokenizer = CharacterTokenizer(
+                characters=["A", "C", "G", "T", "N"],
+                model_max_length=self.max_length + 2,  # add 2 since default adds eos/eos tokens, crop later
+                add_special_tokens=False,
+                padding_side=self.padding_side,
             )
+            # self.tokenizer = CaduceusTokenizer(
+            #     model_max_length=self.max_length,
+            #     add_special_tokens=False
+            # )
 
         # Create all splits: torch datasets (only train/test in this benchmark)
         # self.dataset_train, self.dataset_val = [

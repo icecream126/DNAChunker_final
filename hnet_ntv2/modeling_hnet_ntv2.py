@@ -253,7 +253,7 @@ class HNetEmbeddings(nn.Module):
         embeddings = word_embeds + self.position_embeddings(position_ids)
         embeddings = self.layer_norm(embeddings)
         embeddings = self.dropout(embeddings)
-        # import pdb; pdb.set_trace()
+        # raise ValueError
         
         return embeddings
 
@@ -320,7 +320,7 @@ class HNetNTV2MixerModel(nn.Module):
 
     def forward(self, input_ids, inputs_embeds=None, output_hidden_states=False, boundaries=None):
         all_hidden_states = []
-        # import pdb; pdb.set_trace()
+        # raise ValueError
         if inputs_embeds is not None:
             hidden_states = inputs_embeds
         else:

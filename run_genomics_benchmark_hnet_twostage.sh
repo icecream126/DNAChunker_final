@@ -3,13 +3,13 @@
 # Set of dataset names to iterate through for genomics benchmark
 DATASET_NAMES=(
     "dummy_mouse_enhancers_ensembl"
-    # "demo_coding_vs_intergenomic_seqs"
-    # "demo_human_or_worm"
-    # "human_enhancers_cohn"
-    # "human_enhancers_ensembl"
-    # "human_ensembl_regulatory"
-    # "human_nontata_promoters"
-    # "human_ocr_ensembl"
+#     "demo_coding_vs_intergenomic_seqs"
+#     "demo_human_or_worm"
+#     "human_enhancers_cohn"
+#     "human_enhancers_ensembl"
+#     "human_ensembl_regulatory"
+#     "human_nontata_promoters"
+#     "human_ocr_ensembl"
 )
 
 # Parse command line arguments for GPU IDs
@@ -27,7 +27,7 @@ fi
 echo "Using GPUs: ${AVAILABLE_GPUS[*]}"
 
 # Maximum number of processes per GPU
-MAX_PROCESSES_PER_GPU=2
+MAX_PROCESSES_PER_GPU=1
 echo "Maximum processes per GPU: $MAX_PROCESSES_PER_GPU"
 
 # Function to find available GPU
@@ -68,7 +68,7 @@ find_available_gpu() {
 run_training() {
     local dataset_name=$1
     local gpu_id=$2
-    local seed=$3
+    local val_idx=$3
     local lr=$4
     local batch_size=$5
     local rc_aug=$6
@@ -80,31 +80,46 @@ run_training() {
     export CUDA_VISIBLE_DEVICES=$gpu_id
     
     
-    # Configuration paths for hnet model
-    CFG_PATH="/workspace/outputs_inocras/pretrain/hg38/caduceus-hnet_seqlen-k_d_model-256_n_enc_layer-2_n_main_layer-8_n_dec_layer-2_lr-8e-3_tokenizer_type-default/model_config.json"
-    CKPT_PATH="/workspace/outputs_inocras/pretrain/hg38/caduceus-hnet_seqlen-k_d_model-256_n_enc_layer-2_n_main_layer-8_n_dec_layer-2_lr-8e-3_tokenizer_type-default/checkpoints/test/loss.ckpt"
-    
+    local WANDB_NAME="BATCHSIZE_WEIGHTED8K_${pooling}_${dataset_name}_val_idx-${val_idx}_lr-${lr}"
+    local HYDRA_RUN_DIR="./outputs/downstream/gb/${WANDB_NAME}_batch_size-${batch_size}"
+
+    rm -rf "${HYDRA_RUN_DIR}"
+    mkdir -p "${HYDRA_RUN_DIR}"
+
+    # CFG_PATH="/workspace/outputs_twostage/WEIGHTED_hnet_twostage_seqlen-k_d_model-1024_n_enc_layer-4_n_main_layer-8_n_dec_layer-2_lr-5e-5_tokenizer_type-default/model_config.json"
+    # CKPT_PATH="/workspace/outputs_twostage/WEIGHTED_hnet_twostage_seqlen-k_d_model-1024_n_enc_layer-4_n_main_layer-8_n_dec_layer-2_lr-5e-5_tokenizer_type-default/checkpoints/val/loss.ckpt"
+
+    CFG_PATH="/workspace/outputs_twostage/WEIGHTED_hnet_twostage_seqlen-8k_d_model-1024_n_enc_layer-4_n_main_layer-8_n_dec_layer-2_lr-5e-4_tokenizer_type-default/model_config.json"
+    CKPT_PATH="/workspace/outputs_twostage/WEIGHTED_hnet_twostage_seqlen-8k_d_model-1024_n_enc_layer-4_n_main_layer-8_n_dec_layer-2_lr-5e-4_tokenizer_type-default/checkpoints/val/loss.ckpt"
+
+
     # Set model configuration
-    MODEL="caduceus_hnet"
-    MODEL_NAME="dna_embedding_caduceus_hnet"
+    MODEL="hnet_twostage"
+    MODEL_NAME="dna_embedding_hnet_twostage"
     CONJOIN_TRAIN_DECODER="false"
     CONJOIN_TEST="false"
     
-    # Create wandb name and run directory
-    WANDB_NAME="FULLTRAIN_USE_DECODER_HNET_${pooling}_${dataset_name}_lr-${lr}_batch_size-${batch_size}_rc_aug-${rc_aug}"
-    HYDRA_RUN_DIR="./outputs/downstream/gb_cv5/${dataset_name}/${WANDB_NAME}/seed-${seed}"
-    mkdir -p "${HYDRA_RUN_DIR}"
+    # Calculate gradient accumulation steps if batch_size > 16
+    local effective_batch_size=16
+    local accumulate_grad_batches=1
+    if [ "$batch_size" -gt 16 ]; then
+        accumulate_grad_batches=$((batch_size / 16))
+        effective_batch_size=16
+        echo "Using gradient accumulation: ${accumulate_grad_batches} steps for effective batch size ${batch_size}"
+    else
+        effective_batch_size=$batch_size
+    fi
     
     echo "*****************************************************"
-    echo "Running GenomicsBenchmark model: HNET, task: ${dataset_name}, lr: ${lr}, batch_size: ${batch_size}, rc_aug: ${rc_aug}, pooling: ${pooling}, SEED: ${seed}"
+    echo "Running GenomicsBenchmark model: HNET, task: ${dataset_name}, lr: ${lr}, batch_size: ${batch_size} (effective: ${effective_batch_size}), rc_aug: ${rc_aug}, pooling: ${pooling}, SEED: ${seed}"
     
     # Run the training command
     python -m train \
         experiment=hg38/genomic_benchmark \
         callbacks.model_checkpoint_every_n_steps.every_n_train_steps=5000 \
         dataset.dataset_name="${dataset_name}" \
-        dataset.train_val_split_seed=${seed} \
-        dataset.batch_size=${batch_size} \
+        dataset.train_val_split_seed=${val_idx} \
+        dataset.batch_size=${effective_batch_size} \
         dataset.rc_aug="${rc_aug}" \
         +dataset.conjoin_train=false \
         +dataset.conjoin_test="${CONJOIN_TEST}" \
@@ -116,13 +131,15 @@ run_training() {
         +decoder.conjoin_test="${CONJOIN_TEST}" \
         optimizer.lr="${lr}" \
         trainer.max_epochs=10 \
+        trainer.accumulate_grad_batches=${accumulate_grad_batches} \
         train.pretrained_model_path="${CKPT_PATH}" \
-        wandb.group="downstream/gb_cv5_hnet" \
-        wandb.job_type="${dataset_name}" \
         wandb.name="${WANDB_NAME}" \
-        wandb.project="genomics_benchmark" \
+        wandb.project="genomics_benchmark_tuning" \
         hydra.run.dir="${HYDRA_RUN_DIR}" \
-        decoder.mode="${pooling}" 
+        decoder.mode="${pooling}" \
+        scheduler.warmup_t=1 \
+        scheduler.t_initial=5 \
+        train.global_batch_size=${batch_size}
     
     echo "Completed training for dataset: $dataset_name on GPU: $gpu_id"
     echo "*****************************************************"
@@ -164,13 +181,13 @@ manage_gpus() {
 # Run training for each dataset
 for dataset_name in "${DATASET_NAMES[@]}"; do
     for pooling in "pool"; do
-        for seed in $(seq 0 0); do
-            for lr in 5e-5; do
-                for batch_size in 512; do
-    # for pooling in "len_pool"; do
+        for seed in $(seq 6 6); do
+            for lr in 5e-6 1e-5 5e-5 1e-4; do
+                for batch_size in 256 512 1024; do
+    # for pooling in "pool"; do
     #     for seed in $(seq 1 1); do
     #         for lr in 5e-5; do
-    #             for batch_size in 32; do
+    #             for batch_size in 16; do
                     for rc_aug in "false"; do
                         echo "Waiting for available GPU for dataset: $dataset_name"
                         

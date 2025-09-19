@@ -26,6 +26,8 @@ from src.models.sequence.long_conv_lm import LMBackbone
 from src.models.sequence.long_conv_lm import _init_weights
 from hnet_mlm.configuration_hnet import HNetConfig
 from hnet_mlm.modeling_hnet import HNetTransformer as HNet
+from hnet_twostage.configuration_hnet import HNetConfig as HNetTwostageConfig
+from hnet_twostage.modeling_hnet import HNetTransformer as HNetTwostageTransformer
 
 
 class DNAEmbeddingModel(nn.Module, GenerationMixin):
@@ -294,6 +296,48 @@ class DNAEmbeddingModelHNet(DNAEmbeddingModel):
         self.d_model = config.d_model  # for decoder
         factory_kwargs = {"device": device, "dtype": dtype}
         self.caduceus = HNet(
+            config=config,
+            **factory_kwargs,
+        )
+
+        # # freeze encoder part
+        # for param in self.caduceus.backbone.encoder_layers.parameters():
+        #     param.requires_grad = False
+        
+        # # freeze tokenization part
+        # for param in self.caduceus.backbone.routing_module.parameters():
+        #     param.requires_grad = False
+
+        self.conjoin_train = conjoin_train
+        self.conjoin_test = conjoin_test
+
+    def forward(self, input_ids, position_ids=None, inference_params=None, state=None):  # state for the repo interface
+        # out = self.caduceus(input_ids, return_dict=True, output_hidden_states=True)
+        # hid_states, attn_mask =  out['hidden_states'][1]
+        # hid_states = hid_states * (~attn_mask.squeeze().unsqueeze(-1)).float()
+        out = self.caduceus(input_ids, return_dict=False)
+        # hid_states, attn_mask =  out['hidden_states'][1]
+        # hid_states = hid_states * (attn_mask.squeeze().unsqueeze(-1)).float()
+        # hid_states = self.caduceus(input_ids, return_dict=False)[0]
+        return out[0], None
+        # return hid_states, None
+
+class DNAEmbeddingModelHNetTwostage(DNAEmbeddingModel):
+    """Custom DNA Embedding Model that is compatible with Caduceus-HNet models."""
+
+    def __init__(
+            self,
+            config: HNetTwostageConfig,
+            device=None,
+            dtype=None,
+            conjoin_train=False,
+            conjoin_test=False,
+    ):
+        super(DNAEmbeddingModel, self).__init__()  # nn.Module.__init__()
+        self.config = config
+        self.d_model = config.d_model  # for decoder
+        factory_kwargs = {"device": device, "dtype": dtype}
+        self.caduceus = HNetTwostageTransformer(
             config=config,
             **factory_kwargs,
         )
