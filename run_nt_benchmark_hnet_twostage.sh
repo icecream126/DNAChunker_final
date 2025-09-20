@@ -12,12 +12,12 @@ DATASET_NAMES=(
     # "H3K14ac"
     # "H3K36me3"
     # "H3K79me3"
-    "H4"
+    # "H4"
     # "H4ac"
-    # "promoter_all"
+    "promoter_all"
     "promoter_no_tata"
     "promoter_tata"
-    # "splice_sites_acceptors"
+    "splice_sites_acceptors"
     "splice_sites_all"
     "splice_sites_donors"
 )
@@ -85,14 +85,14 @@ run_training() {
     # Set CUDA device
     export CUDA_VISIBLE_DEVICES=$gpu_id
 
-    local WANDB_NAME="full_train_RECENT_HNET_TWOSTAGE_WEIGHTED_${pooling}_${dataset_name}_val_idx-${val_idx}_lr-${lr}"
+    local WANDB_NAME="FINAL_MAIN_MODEL_ONLY_HNET_TWOSTAGE_${pooling}_${dataset_name}_val_idx-${val_idx}_lr-${lr}_batch_size-32"
     local HYDRA_RUN_DIR="./outputs/downstream/nt/${WANDB_NAME}"
 
     rm -rf "${HYDRA_RUN_DIR}"
     mkdir -p "${HYDRA_RUN_DIR}"
 
-    CFG_PATH="/workspace/outputs_twostage/WEIGHTED_hnet_twostage_seqlen-k_d_model-1024_n_enc_layer-4_n_main_layer-8_n_dec_layer-2_lr-5e-5_tokenizer_type-default/model_config.json"
-    CKPT_PATH="/workspace/outputs_twostage/WEIGHTED_hnet_twostage_seqlen-k_d_model-1024_n_enc_layer-4_n_main_layer-8_n_dec_layer-2_lr-5e-5_tokenizer_type-default/checkpoints/val/loss.ckpt"
+    CFG_PATH="/workspace/outputs_twostage/WEIGHTED_hnet_twostage_seqlen-8k_d_model-1024_n_enc_layer-4_n_main_layer-8_n_dec_layer-2_lr-5e-4_tokenizer_type-default/model_config.json"
+    CKPT_PATH="/workspace/outputs_twostage/WEIGHTED_hnet_twostage_seqlen-8k_d_model-1024_n_enc_layer-4_n_main_layer-8_n_dec_layer-2_lr-5e-4_tokenizer_type-default/checkpoints/val/loss.ckpt"
 
     # Run the training command
     python -m train \
@@ -157,8 +157,10 @@ for dataset_name in "${DATASET_NAMES[@]}"; do
     for pooling in "pool"; do
         # for val_idx in $(seq 6 8); do
         #     for lr in 6e-5 7e-5 8e-5 9e-5; do
-        for val_idx in $(seq 6 8); do
-            for lr in 5e-5 8e-5; do
+        for val_idx in $(seq 6 6); do
+            for lr in 3e-5; do
+            # for lr in 5e-6; do
+
                 echo "Waiting for available GPU for dataset: $dataset_name"
                 
                 # Wait for available GPU

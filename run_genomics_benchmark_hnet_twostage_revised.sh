@@ -5,7 +5,7 @@ DATASET_NAMES=(
     "Genomic_Benchmarks_human_ensembl_regulatory"
     "Genomic_Benchmarks_demo_human_or_worm"
     "Genomic_Benchmarks_human_ocr_ensembl"
-    # "Genomic_Benchmarks_drosophila_enhancers_stark"
+    "Genomic_Benchmarks_drosophila_enhancers_stark"
     "Genomic_Benchmarks_dummy_mouse_enhancers_ensembl"
     "Genomic_Benchmarks_demo_coding_vs_intergenomic_seqs"
     "Genomic_Benchmarks_human_enhancers_ensembl"
@@ -81,7 +81,7 @@ run_training() {
     export CUDA_VISIBLE_DEVICES=$gpu_id
     
     
-    local WANDB_NAME="ORIG_HNET_TWOSTAGE_WEIGHT_8k_${pooling}_${dataset_name}_val_idx-${val_idx}_lr-${lr}"
+    local WANDB_NAME="FINAL_MAIN_MODEL_ONLY_HNET_TWOSTAGE_${pooling}_${dataset_name}_val_idx-${val_idx}_lr-${lr}"
     local HYDRA_RUN_DIR="./outputs/downstream/gb/${WANDB_NAME}_batch_size-${batch_size}"
 
     rm -rf "${HYDRA_RUN_DIR}"
@@ -187,8 +187,8 @@ manage_gpus() {
 for dataset_name in "${DATASET_NAMES[@]}"; do
     for pooling in "pool"; do
         for seed in $(seq 5 5); do
-            for lr in 2e-4 1e-4 5e-5 2e-5 1e-5 5e-6; do
-                for batch_size in 32 64 128; do
+            for lr in 3e-5; do
+                for batch_size in 64; do
     # for pooling in "pool"; do
     #     for seed in $(seq 1 1); do
     #         for lr in 5e-5 1e-5; do

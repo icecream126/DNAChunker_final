@@ -354,15 +354,32 @@ class DNAEmbeddingModelHNetTwostage(DNAEmbeddingModel):
         self.conjoin_test = conjoin_test
 
     def forward(self, input_ids, position_ids=None, inference_params=None, state=None):  # state for the repo interface
-        # out = self.caduceus(input_ids, return_dict=True, output_hidden_states=True)
-        # hid_states, attn_mask =  out['hidden_states'][1]
+        out = self.caduceus(input_ids, return_dict=True, output_hidden_states=True)
+        hid_states, chunk_lengths =  out['hidden_states'][1]
+        final_states = out['hidden_states'][0]
+
+        pad_num = (input_ids==4).float().sum(-1)
+        true_val_token_num = (chunk_lengths - pad_num).float()
+
+        if (true_val_token_num <= 0).any():
+            print("true val token num is less than 0")
+            print(true_val_token_num.min())
+            print(true_val_token_num.max())
+            raise ValueError
+        # remove the righthand 
+        
+        attn_mask  = torch.arange(hid_states.shape[1], device=hid_states.device)[None, :] >= true_val_token_num[:, None]
+        hid_states = hid_states * (~attn_mask).float().unsqueeze(-1)
+        # import pdb; pdb.set_trace()
+        hid_states_pool = hid_states.sum(dim=1) / (~attn_mask).sum(dim=1).unsqueeze(-1)
+        hid_states_expand = hid_states_pool.unsqueeze(1).expand_as(final_states)
         # hid_states = hid_states * (~attn_mask.squeeze().unsqueeze(-1)).float()
-        out = self.caduceus(input_ids, return_dict=False)
+        # out = self.caduceus(input_ids, return_dict=True)
         # hid_states, attn_mask =  out['hidden_states'][1]
         # hid_states = hid_states * (attn_mask.squeeze().unsqueeze(-1)).float()
         # hid_states = self.caduceus(input_ids, return_dict=False)[0]
-        return out[0], None
-        # return hid_states, None
+        # return out[0], None
+        return hid_states_expand, None
 
 
 def load_backbone(model, state_dict, freeze_backbone=False, ignore_head=True):

@@ -678,8 +678,9 @@ class HNetMixerModel(nn.Module):
         special_token_boundaries = self.calculate_special_token_boundaries(input_ids)
         b_stage1 = (b_stage1.bool() | special_token_boundaries.bool()).float()
         
+
         x_s1, chunk_lengths_s1 = self.downsampler(x_hat_enc1, b_stage1)
-        
+
         # # Print average number of chunks after first chunking
         # avg_chunks_s1 = chunk_lengths_s1.float().mean().item()
         # compression_ratio_s1 = seq_len / avg_chunks_s1 if avg_chunks_s1 > 0 else 0
@@ -716,13 +717,15 @@ class HNetMixerModel(nn.Module):
             print("Main hidden states is nan")
             raise ValueError
         z_hat_s2 = main_hidden_states
-        all_hidden_states.append((z_hat_s2, attention_mask))
+        
 
         # === TWO-STAGE DECHUNKING ===
         # 6. First Dechunking: Fine chunks -> Coarse chunks
         max_chunks_s2 = z_hat_s2.shape[1]
         key_padding_mask_s2 = torch.arange(max_chunks_s2, device=z_hat_s2.device)[None, :] >= chunk_lengths_s2[:, None]
         z_dechunked_s1 = self.upsampler_stage2(query=x_hat_enc2, key_value=z_hat_s2, key_padding_mask=key_padding_mask_s2)
+
+        all_hidden_states.append((z_dechunked_s1, chunk_lengths_s1))
 
         # 7. Second Dechunking: Coarse chunks -> Full sequence
         max_chunks_s1 = z_dechunked_s1.shape[1]
